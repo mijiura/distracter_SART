@@ -8,6 +8,11 @@
                  定常図形: mountSteadyItem() → .steady-item.is-visible / .is-leaving + .motion-*
                  数字サイズは class "digit size-N"（N=1..5）← CONFIG.fontSizes
 
+  【方針】
+    課題画面は黒背景＋白刺激（実験室向け・コントラスト優先）
+    UI パネル（スタート／教示／休憩／終了）は読みやすい左寄せカード風
+    .hidden で画面・刺激の表示切替（app.js が classList を操作）
+
   【ここを触ると何が変わるか（よく触るところ）】
     :root の色 …… 全体のトーン
     .digit.size-* … 刺激の見かけの大きさ（文献の pt に近づけたいとき）
@@ -17,17 +22,9 @@
     .panel ……… 説明画面の幅
 */
 
-/* 色の共通変数。変えると全画面の背景・文字・ボタン基調が変わる */
- * WebCPT / SART — スタイルシート
- * ------------------------------------------------------------
- * 方針:
- *   - 課題画面は黒背景＋白刺激（実験室向け・コントラスト優先）
- *   - UI パネル（スタート／教示／休憩／終了）は読みやすい左寄せカード風
- *   - .hidden で画面・刺激の表示切替（app.js が classList を操作）
- */
-
 /* カラー変数（全体のトーンをここでまとめて変更できる） */
 :root {
+  color-scheme: dark;
   --bg: #000; /* ページ背景（課題も黒） */
   --fg: #fff;
   --muted: #c8c8c8; /* 本文の控えめな色 */
@@ -43,8 +40,11 @@ html,
 body {
   margin: 0;
   height: 100%;
-  background: var(--bg);
-  color: var(--fg);
+  /* フォールバック付き: 変数が効かない場合でも白地に白字にならない */
+  background: #000;
+  background: var(--bg, #000);
+  color: #fff;
+  color: var(--fg, #fff);
   font-family: "Hiragino Sans", "Noto Sans JP", sans-serif;
   /* 課題中にテキスト選択で反応が阻害されないようにする */
   user-select: none;
@@ -88,7 +88,8 @@ body {
 
 .panel p,
 .panel li {
-  color: var(--muted);
+  color: #c8c8c8;
+  color: var(--muted, #c8c8c8);
   line-height: 1.65;
 }
 
@@ -128,7 +129,8 @@ select {
 button {
   appearance: none;
   border: 0;
-  background: var(--accent);
+  background: #f2f2f2;
+  background: var(--accent, #f2f2f2);
   color: #111;
   padding: 0.85rem 1.4rem;
   font-size: 1rem;
@@ -407,20 +409,23 @@ button:disabled {
   padding: 0.85rem 1rem;
   background: #1a1a1a;
   border: 1px solid #333;
-  color: var(--muted);
+  color: #c8c8c8;
+  color: var(--muted, #c8c8c8);
   line-height: 1.6;
   font-size: 0.92rem;
 }
 
 .norm-box strong {
-  color: var(--fg);
+  color: #fff;
+  color: var(--fg, #fff);
 }
 
 .caveats,
 .sources {
   margin: 0;
   padding-left: 1.2rem;
-  color: var(--muted);
+  color: #c8c8c8;
+  color: var(--muted, #c8c8c8);
   line-height: 1.65;
   font-size: 0.88rem;
 }
@@ -443,7 +448,8 @@ button:disabled {
 .history-list {
   margin-top: 0.85rem;
   font-size: 0.88rem;
-  color: var(--muted);
+  color: #c8c8c8;
+  color: var(--muted, #c8c8c8);
   line-height: 1.55;
 }
 
