@@ -1345,53 +1345,6 @@
         下の「相違点」と論文 URL もあわせて読んでください。
       </p>
     `;
-
-    // デモや短縮ブロックは No-Go 数が文献前提（25）と違うので比較しない
-    if (state.demo || s.nogo !== manly.noGoTrials) {
-      el.normCompare.innerHTML = `
-        <p>
-          <strong>文献との数値比較はスキップしました。</strong>
-          参照研究は No-Go 25 回（妨害なし）前提です。
-          いまの本試行は No-Go=${s.nogo} 回${state.demo ? "（デモ）" : ""}のため、割合の見た目比較は参考程度にしてください。
-        </p>
-        <p>
-          参考（妨害なし・健常）: Manly ら Commission 平均 ${manly.commissionMean} / ${manly.noGoTrials}
-          （約 ${fmtPct(manlyRate)}）、Robertson コントロール ${rob.commissionMean} / ${rob.noGoTrials}
-          （約 ${fmtPct(robRate)}）。
-        </p>
-      `;
-      return;
-    }
-
-    const z =
-      manly.commissionSd > 0
-        ? (s.commissionCount - manly.commissionMean) / manly.commissionSd
-        : NaN;
-    const zText = Number.isFinite(z) ? z.toFixed(2) : "—";
-    const rtVs =
-      Number.isFinite(s.rtMean)
-        ? `あなたの正答 Go RT 平均は ${fmtMs(s.rtMean)}（Manly らの報告平均は約 ${manly.goRtMeanMs} ms）。`
-        : "";
-
-    el.normCompare.innerHTML = `
-      <p>
-        <strong>妨害なし条件での文献比較（年齢帯なし）</strong><br />
-        あなたの Commission は <strong>${s.commissionCount} / ${s.nogo}</strong>
-        （${fmtPct(s.commissionRate)}）。
-        ${describeVsManly(s.commissionCount)}
-        Manly 基準の z ≈ <strong>${zText}</strong>
-        （(件数 − ${manly.commissionMean}) / ${manly.commissionSd}）。
-      </p>
-      <p>
-        副参照: Robertson コントロール平均は ${rob.commissionMean} 件
-        （約 ${fmtPct(robRate)}、SD ${rob.commissionSd}）。
-        ${rtVs}
-      </p>
-      <p>
-        この比較は<strong>診断ではなく</strong>、妨害なし SART の研究報告との概算です。
-        下の「相違点」と論文 URL もあわせて読んでください。
-      </p>
-    `;
   }
 
   // --- CSV ダウンロード（#btn-download） ---
