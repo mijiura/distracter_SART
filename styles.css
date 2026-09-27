@@ -1,0 +1,467 @@
+/*
+  WebCPT / styles.css — 見た目だけ（動き・実験ロジックは app.js）
+  ------------------------------------------------------------
+  【他ファイルとの繋がり】
+    index.html … id / class の名前は HTML と一致させる（セレクタが効かなくなる）
+    app.js     … show()/hide は .hidden の付け外し
+                 突発図形: showDistractors() → .distractor.shape-* + --x/--y/--size
+                 定常図形: mountSteadyItem() → .steady-item.is-visible / .is-leaving + .motion-*
+                 数字サイズは class "digit size-N"（N=1..5）← CONFIG.fontSizes
+
+  【ここを触ると何が変わるか（よく触るところ）】
+    :root の色 …… 全体のトーン
+    .digit.size-* … 刺激の見かけの大きさ（文献の pt に近づけたいとき）
+    .mask ……… マスク円の直径・線の太さ
+    .distractor … Async/Sync 突発図形の色・形
+    .steady-item / @keyframes steady-* … Steady の出入り・保持中の動き
+    .panel ……… 説明画面の幅
+*/
+
+/* 色の共通変数。変えると全画面の背景・文字・ボタン基調が変わる */
+ * WebCPT / SART — スタイルシート
+ * ------------------------------------------------------------
+ * 方針:
+ *   - 課題画面は黒背景＋白刺激（実験室向け・コントラスト優先）
+ *   - UI パネル（スタート／教示／休憩／終了）は読みやすい左寄せカード風
+ *   - .hidden で画面・刺激の表示切替（app.js が classList を操作）
+ */
+
+/* カラー変数（全体のトーンをここでまとめて変更できる） */
+:root {
+  --bg: #000; /* ページ背景（課題も黒） */
+  --fg: #fff;
+  --muted: #c8c8c8; /* 本文の控えめな色 */
+  --accent: #f2f2f2; /* 主ボタン背景 */
+  --panel: #111;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Hiragino Sans", "Noto Sans JP", sans-serif;
+  /* 課題中にテキスト選択で反応が阻害されないようにする */
+  user-select: none;
+}
+
+body {
+  /* 終了画面の長文を読めるよう縦スクロール可。横は出さない */
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* アプリ全体を画面中央に配置 */
+#app {
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+/* ----- UI パネル（スタート／教示／休憩／終了） ----- */
+.panel {
+  width: min(42rem, calc(100% - 2.5rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  text-align: left;
+  padding: 0.5rem 0.25rem 1.5rem;
+}
+
+/* 終了画面だけ文章が長いので例外的にスクロール可（body は overflow:hidden） */
+#screen-done.panel {
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  padding: 0.5rem 0.25rem;
+}
+
+.panel h1 {
+  margin: 0 0 0.4rem;
+  font-size: 1.35rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.panel p,
+.panel li {
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.panel ul {
+  padding-left: 1.2rem;
+}
+
+label {
+  display: block;
+  margin: 0.85rem 0 0.35rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+}
+
+input[type="text"],
+select {
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #444;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 1rem;
+}
+
+select {
+  appearance: none;
+  border-radius: 0;
+}
+
+.row {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-top: 0.9rem;
+}
+
+button {
+  appearance: none;
+  border: 0;
+  background: var(--accent);
+  color: #111;
+  padding: 0.85rem 1.4rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+/* index.html の「保存履歴」「戻る」など。見た目だけ副次ボタンに */
+button.secondary {
+  background: #444;
+  color: #fff;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ========== 課題画面（数字＋図形妨害）==========
+   HTML: #screen-task > #distractor-layer + #task-stage
+   JS: show("task") で .hidden を外す。刺激の中身は app.js が操作 */
+
+/* 画面いっぱいに広げる。図形レイヤの位置基準（position:absolute の親） */
+#screen-task {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+/* 中央の数字・マスク用。図形より手前。幅/高さを変えると刺激の「枠」が変わる */
+#task-stage {
+  position: relative;
+  z-index: 1;
+  width: min(28rem, 88vw);
+  height: min(28rem, 72vh);
+  display: grid;
+  place-items: center;
+}
+
+/*
+  図形妨害レイヤ（HTML #distractor-layer ← el.distractors）。
+  pointer-events: none … 図形をクリックしても反応は window の pointerdown へ渡る。
+  z-index: 0 … 数字より後ろ。手前にしたいなら数字側より大きくする。
+*/
+#distractor-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/*
+  1つの図形。app.js showDistractors() が:
+    class="distractor shape-{square|triangle|circle|diamond}"
+    style --x/--y（%）--size（rem）
+  を付ける。形の種類を増やすなら:
+    1) ここに .distractor.shape-新形名 を追加
+    2) app.js CONFIG.distractorShapes に同じ名前を追加
+*/
+.distractor {
+  position: absolute;
+  left: var(--x, 50%);
+  top: var(--y, 50%);
+  width: var(--size, 2.4rem);
+  height: var(--size, 2.4rem);
+  box-sizing: border-box;
+  transform: translate(-50%, -50%); /* 中心が (x,y) になる */
+}
+
+.distractor.shape-square {
+  background: #fff;
+}
+
+.distractor.shape-circle {
+  background: #fff;
+  border-radius: 50%;
+}
+
+.distractor.shape-triangle {
+  background: #fff;
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+}
+
+.distractor.shape-diamond {
+  background: #fff;
+  width: calc(var(--size, 2.4rem) * 0.72);
+  height: calc(var(--size, 2.4rem) * 0.72);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+/*
+  ========== Steady（ゆったり妨害）==========
+  構造: .steady-item（位置・出入りの透明度）> .steady-mover（回転/スライド/透過）> .distractor
+  ・left/top は最初から最終位置。入場は transform のずれを戻すだけ
+  ・退場は opacity だけ落とす（animation を切らない → 途切れ防止）
+  ・動きは内側に分離し、出入りの transition とぶつからない
+*/
+
+.steady-item {
+  position: absolute;
+  left: var(--x, 20%);
+  top: var(--y, 20%);
+  width: var(--size, 12rem);
+  height: var(--size, 12rem);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) translate(var(--enter-dx, 0), var(--enter-dy, 0));
+  transition:
+    opacity var(--fade-in, 8s) ease-in-out,
+    transform var(--fade-in, 8s) ease-in-out;
+  will-change: transform, opacity;
+}
+
+.steady-item.is-visible {
+  opacity: var(--opacity, 0.3);
+  transform: translate(-50%, -50%);
+}
+
+/* 退場: 透明度のみ。位置・内側アニメはそのまま（animation: none 禁止） */
+.steady-item.is-visible.is-leaving {
+  opacity: 0;
+  transition: opacity var(--fade-out, 8s) ease-in-out;
+}
+
+.steady-mover {
+  width: 100%;
+  height: 100%;
+  transform-origin: center center;
+}
+
+.steady-item .distractor-steady-inner {
+  position: relative;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  transform: none;
+}
+
+.steady-item .distractor-steady-inner.shape-diamond {
+  width: 72%;
+  height: 72%;
+  margin: 14% auto 0;
+  transform: rotate(45deg);
+}
+
+@keyframes steady-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.steady-mover.motion-rotate {
+  animation: steady-rotate var(--dur, 60s) linear infinite;
+}
+
+@keyframes steady-slide {
+  from {
+    transform: translate(0, 0);
+  }
+  to {
+    transform: translate(var(--slide-x, 8vmin), var(--slide-y, -6vmin));
+  }
+}
+
+.steady-mover.motion-slide {
+  animation: steady-slide var(--dur, 50s) ease-in-out infinite alternate;
+}
+
+/* 内側の濃淡。外側の opacity（出入り）とは独立なので切替で跳ねない */
+@keyframes steady-fade-inner {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/*
+ * 数字刺激
+ * app.js が textContent に数字を入れ、class を "digit size-N" に切替える。
+ * 5 段階サイズは Robertson らの「大きさは無視せよ」操作に対応。
+ */
+.digit {
+  position: relative;
+  z-index: 1;
+  color: #fff;
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.digit.size-1 { font-size: 48pt; }
+.digit.size-2 { font-size: 72pt; }
+.digit.size-3 { font-size: 94pt; }
+.digit.size-4 { font-size: 100pt; }
+.digit.size-5 { font-size: 120pt; }
+
+/*
+ * マスク刺激（数字のあとに出す「十字入りの円」）
+ * 円は border + border-radius、十字は ::before / ::after の斜線 2 本。
+ * 寸法は mm 指定（印刷・画面での物理サイズに近づけやすい）。
+ */
+.mask {
+  width: 29mm;
+  height: 29mm;
+  position: relative;
+  z-index: 1;
+  border: 3px solid #fff;
+  border-radius: 50%;
+}
+
+.mask::before,
+.mask::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 78%;
+  height: 3px;
+  background: #fff;
+}
+
+.mask::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.mask::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+/* app.js / HTML の画面・刺激切替に使う共通クラス */
+.hidden {
+  display: none !important;
+}
+
+/* ----- 終了画面の指標一覧 ----- */
+.stats {
+  margin-top: 1rem;
+  font-variant-numeric: tabular-nums; /* 数字の桁揃え */
+}
+
+.stats div {
+  display: flex;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #333;
+}
+
+.note {
+  font-size: 0.82rem;
+  color: #a8a8a8;
+}
+
+/* 終了画面の小見出し・比較ボックス・論文リンク（HTML の静的部分＋JS 埋め込み） */
+.subhead {
+  margin: 1.25rem 0 0.45rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+}
+
+/* #self-compare / #norm-compare に app.js が HTML を流し込む箱 */
+.norm-box {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 0.92rem;
+}
+
+.norm-box strong {
+  color: var(--fg);
+}
+
+.caveats,
+.sources {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  line-height: 1.65;
+  font-size: 0.88rem;
+}
+
+.caveats li,
+.sources li {
+  margin-bottom: 0.55rem;
+}
+
+.sources a {
+  color: #9ec1ff;
+  word-break: break-all;
+}
+
+.sources a:hover {
+  color: #c5d9ff;
+}
+
+/* 履歴画面（#history-list ← renderHistoryList() が <table> を生成） */
+.history-list {
+  margin-top: 0.85rem;
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.history-list table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-list th,
+.history-list td {
+  text-align: left;
+  padding: 0.35rem 0.4rem;
+  border-bottom: 1px solid #333;
+  vertical-align: top;
+}
+
+.history-list th {
+  color: #ddd;
+  font-weight: 600;
+}
