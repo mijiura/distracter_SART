@@ -1,49 +1,24 @@
 <!DOCTYPE html>
 <!--
-  WebCPT / SART — 画面の骨格（DOM と id の置き場）
+  WebCPT / SART — 画面の骨格（DOM と id）
   ------------------------------------------------------------
-  【3ファイルの役割】
-    index.html … 画面の箱・入力欄・ボタンの id（ここを変えると app.js の getElementById が壊れる）
-    styles.css … 見た目（色・サイズ・レイアウト）。id / class 名は HTML と揃える
-    app.js     … 実験の進行・反応記録・集計・CSV / localStorage
+  index.html … 画面・入力・ボタンの id（変えたら app.js の getElementById も揃える）
+  styles.css … 見た目
+  app.js     … 実験進行・反応・集計・CSV / localStorage
 
-  【画面の流れ（app.js の show() が .hidden を付け外し）】
-    start → instruct → task（練習）→ rest → task（本試行）→ done
-    start ↔ history
-
-  【id を変えるとき】
-    ・HTML の id を変えたら、必ず app.js の screens / el と同じ文字列に揃える
-    ・見た目だけ変えたいなら styles.css のセレクタ側を触る（id は触らない方が安全）
-  WebCPT / SART — 単一ページの実験 UI
-  ------------------------------------------------------------
-  画面はすべてこの HTML にあり、app.js が .hidden の付け外しで切替える。
-  スタイルは styles.css。ロジック・CSV 出力は app.js。
-
-  画面一覧:
-    #screen-start    … 参加者ID・デモ設定
-    #screen-instruct … 教示
-    #screen-task     … 数字／マスク提示（フルスクリーン）
-    #screen-rest     … 練習後の休憩
-    #screen-done     … 集計と CSV 保存
+  流れ: start → instruct → task（練習）→ rest → task（本試行）→ done
+        start ↔ history
 -->
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SART</title>
-    <!-- 見た目。パスやファイル名を変えるとスタイルが全部消える -->
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <!-- #app: styles.css が中央寄せグリッドにする箱。子の section が各画面 -->
     <main id="app">
-      <!-- ========== スタート画面 (#screen-start) ==========
-           app.js: screens.start / show("start")
-           CSS: .panel（説明画面用レイアウト）
-           ここでの入力が prepareSession() に渡り、試行列・教示・CSV列の元になる。 -->
-      <!-- ========== スタート画面 ==========
-           参加者IDは CSV ファイル名・ログ列に使う。
-           デモON、または URL ?demo=1 で本試行を 36 試行に短縮。 -->
+      <!-- スタート: 参加者ID・条件・デモ。prepareSession() の入力元 -->
       <section id="screen-start" class="panel">
         <h1>SART</h1>
         <p>
@@ -51,26 +26,16 @@
           数字 1–9 が出ます。<strong>3 以外は押す / 3 は押さない</strong>。
         </p>
 
-        <!-- #participant-id → el.participant
-             変えると: CSV ファイル名・localStorage の紐づけ・履歴絞り込みが全部変わる。
-             同じIDなら個人内 Baseline 比較ができる。空なら "anon"。 -->
         <label for="participant-id">参加者ID</label>
         <input id="participant-id" type="text" placeholder="P001" autocomplete="off" />
 
-        <!-- #condition-select → el.condition / CONDITION_META
-             Baseline: 妨害なし（文献比較の対象）
-             ShapeDistract: 図形妨害あり（#shape-options を表示）
-             option の value を変えると app.js のキー照合が外れるので注意。 -->
         <label for="condition-select">条件</label>
         <select id="condition-select">
           <option value="Baseline">Baseline（静穏）</option>
           <option value="ShapeDistract">ShapeDistract（周囲に図形）</option>
         </select>
 
-        <!-- #shape-options → el.shapeOptions
-             初期は .hidden。条件が ShapeDistract のときだけ syncShapeOptionsUi() が表示。
-             #timing-select の value "Async"|"Sync"|"Steady" が state.timingMode になる。
-             図形の出し方・教示文・CSV の distractor_timing_mode / has_steady_visual が変わる。 -->
+        <!-- ShapeDistract のときだけ syncShapeOptionsUi() が表示 -->
         <div id="shape-options" class="hidden">
           <label for="timing-select">図形のタイミング</label>
           <select id="timing-select">
@@ -85,18 +50,12 @@
 
         <div class="row">
           <label>
-            <!-- #demo-mode → el.demo
-                 ON: 本試行が demoRepeatsPerDigit（既定4→36試行）に短縮。
-                 文献比較（No-Go25前提）はスキップされやすい。動作確認用。 -->
             <input id="demo-mode" type="checkbox" />
             短いデモ（本試行 36）
           </label>
         </div>
         <div class="row">
-          <!-- #btn-start → prepareSession() → show("instruct") -->
-          <!-- app.js: prepareSession() → 教示画面へ -->
           <button id="btn-start" type="button">次へ</button>
-          <!-- #btn-history → renderHistoryList() → show("history") -->
           <button id="btn-history" class="secondary" type="button">保存履歴</button>
         </div>
         <p class="note">
@@ -105,11 +64,7 @@
         </p>
       </section>
 
-      <!-- ========== 履歴画面 (#screen-history) ==========
-           app.js: screens.history / STORAGE_KEY の一覧表示
-           CSS: .history-list（表の見た目）
-           中身の表は空。renderHistoryList() が #history-list に HTML を流し込む。
-           「このIDの履歴を消す」は localStorage だけ（CSVファイルは消えない）。 -->
+      <!-- 履歴: renderHistoryList() が #history-list を埋める -->
       <section id="screen-history" class="panel hidden">
         <h1>保存履歴（このブラウザ）</h1>
         <p class="note">
@@ -126,12 +81,7 @@
         </div>
       </section>
 
-      <!-- ========== 教示画面 (#screen-instruct) ==========
-           #instruct-list の中身は静的 HTML だが、prepareSession() 後に
-           updateInstruct() が条件に応じて上書きする（ShapeDistract 用の一文を挿入）。
-           文言を変えたいなら: 初期文はここ／条件差分は app.js の updateInstruct()。 -->
-      <!-- ========== 教示画面 ==========
-           課題ルールの説明。開始ボタンで練習ブロックへ。 -->
+      <!-- 教示: updateInstruct() が条件に応じて #instruct-list を上書き -->
       <section id="screen-instruct" class="panel hidden">
         <h1>教示</h1>
         <ul id="instruct-list">
@@ -140,57 +90,33 @@
           <li><strong>3 以外</strong>の数字が出たら、できるだけ早く押してください。</li>
           <li><strong>3</strong> が出たら、押さないでください。</li>
           <li>速さも大切ですが、間違いもできるだけ減らしてください。</li>
+          <li>練習では、各試行のあと画面に<strong>正解</strong>または<strong>ミス</strong>が表示されます。本試行では出ません。</li>
         </ul>
         <div class="row">
-          <!-- #btn-begin → runSession()（練習ブロック開始） -->
-          <!-- app.js: runSession() → 練習ブロック -->
           <button id="btn-begin" type="button">練習を始める</button>
         </div>
       </section>
 
-      <!-- ========== 課題画面 (#screen-task) ==========
-           CSS: フルスクリーン。#distractor-layer（下）と #task-stage（上）の2層。
-           app.js: show("task") / runTrial / showDistractors
-           ・#stimulus … 数字。class "digit size-N" は styles.css の .digit.size-1〜5
-           ・#mask …… 十字入り円。表示/非表示だけ JS、見た目は CSS
-           ・#distractor-layer … 図形を JS が append。形は .distractor.shape-*
-           id や class 名を変えると刺激が出ない / サイズが効かない。 -->
-      <!-- ========== 課題画面 ==========
-           #stimulus … 数字（.digit.size-1〜5 で大きさを切替）
-           #mask     … 十字入り円（CSS の ::before / ::after で描画）
-           aria-hidden: スクリーンリーダ向けに刺激を読み上げない -->
+      <!-- 課題: #stimulus / #mask / #trial-feedback（練習のみ）/ #distractor-layer -->
       <section id="screen-task" class="hidden">
         <div id="distractor-layer" aria-hidden="true"></div>
         <div id="task-stage">
           <div id="stimulus" class="digit size-3 hidden" aria-hidden="true">8</div>
           <div id="mask" class="mask hidden" aria-hidden="true"></div>
+          <div id="trial-feedback" class="trial-feedback hidden" aria-live="polite"></div>
         </div>
       </section>
 
-      <!-- ========== 休憩 (#screen-rest) ==========
-           練習→本試行のあいだ。#rest-text / #btn-continue の文言は
-           runSession() 終了時に app.js が書き換える。 -->
-      <!-- ========== 休憩画面 ==========
-           練習終了後に表示。文言・ボタンラベルは app.js が書き換える。 -->
+      <!-- 休憩: 文言は runSession() が書き換え -->
       <section id="screen-rest" class="panel hidden">
         <h1>休憩</h1>
         <p id="rest-text"></p>
         <div class="row">
-          <!-- app.js: runExperiment() → 本試行ブロック -->
           <button id="btn-continue" type="button">続ける</button>
         </div>
       </section>
 
-      <!-- ========== 終了画面 (#screen-done) ==========
-           app.js renderStats() が以下を埋める:
-             #stats ……… 今回の集計表（.stats）
-             #self-compare … 自分の過去 Baseline 差分（.norm-box）
-             #norm-compare … 文献健常値との概算（Baseline・No-Go25 のとき本比較）
-           下の caveats / sources は静的（論文の前提説明）。文言だけここで編集可。
-           #btn-download → downloadCsv() / #btn-restart → show("start") -->
-      <!-- ========== 終了画面 ==========
-           #stats / #norm-compare は app.js が埋める。
-           相違点・論文URLは静的表示（年齢帯規範は使わない）。 -->
+      <!-- 終了: #stats / #self-compare / #norm-compare は app.js が埋める -->
       <section id="screen-done" class="panel hidden">
         <h1>終了</h1>
         <p>
@@ -198,13 +124,14 @@
           主要指標は 3 での押し間違い（Commission）です。
         </p>
         <div id="stats" class="stats"></div>
+        <div id="self-compare" class="norm-box"></div>
         <div id="norm-compare" class="norm-box"></div>
 
         <h2 class="subhead">この比較の前提</h2>
         <ul class="caveats">
           <li>
             参照値は<strong>妨害刺激なし（Baseline）</strong>の SART 研究からのものです。
-            本アプリの現状も妨害なしです。妨害を足した条件には当てはまりません。
+            ShapeDistract など妨害あり条件には当てはまりません。
           </li>
           <li>年齢帯別の規範は使いません（全体の健常報告との概算比較のみ）。</li>
           <li>速さ優先だと Commission が増えやすいです（速さ–正確さのトレードオフ）。</li>
@@ -261,7 +188,6 @@
         </div>
       </section>
     </main>
-    <!-- 即時実行の IIFE。外部ライブラリなし -->
     <script src="app.js"></script>
   </body>
 </html>

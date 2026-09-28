@@ -29,7 +29,6 @@
   --fg: #fff;
   --muted: #c8c8c8; /* 本文の控えめな色 */
   --accent: #f2f2f2; /* 主ボタン背景 */
-  --panel: #111;
 }
 
 * {
@@ -72,10 +71,8 @@ body {
   padding: 0.5rem 0.25rem 1.5rem;
 }
 
-/* 終了画面だけ文章が長いので例外的にスクロール可（body は overflow:hidden） */
+/* 終了画面は文量が多く、余白をやや詰める */
 #screen-done.panel {
-  max-height: calc(100vh - 2rem);
-  overflow-y: auto;
   padding: 0.5rem 0.25rem;
 }
 
@@ -317,6 +314,10 @@ button:disabled {
   }
 }
 
+.steady-mover.motion-fade {
+  animation: steady-fade-inner var(--dur, 30s) ease-in-out infinite;
+}
+
 /*
  * 数字刺激
  * app.js が textContent に数字を入れ、class を "digit size-N" に切替える。
@@ -369,6 +370,29 @@ button:disabled {
 
 .mask::after {
   transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+/*
+  練習ブロックの正誤フィードバック（#trial-feedback）
+  本試行では出さない。正解=明るい緑系、ミス=明るい赤系（黒背景上で視認しやすい色）
+*/
+.trial-feedback {
+  position: relative;
+  z-index: 2;
+  font-size: 2.4rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.trial-feedback.is-correct {
+  color: #7dffa0;
+}
+
+.trial-feedback.is-error {
+  color: #ff8a8a;
 }
 
 /* app.js / HTML の画面・刺激切替に使う共通クラス */

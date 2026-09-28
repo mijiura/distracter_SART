@@ -2,52 +2,19 @@
  * =============================================================================
  * WebCPT / SART（Sustained Attention to Response Task）— ブラウザ実装
  * =============================================================================
+ * index.html … id / DOM。styles.css … 見た目。.hidden / .digit.size-N / .distractor.shape-*
  *
- * 【何をするアプリか】
- *   Robertson et al. (1997) の SART を Web 上で再現する。
- *   数字 1–9 を連続提示し、「3 以外は押す / 3 は押さない」Go/No-Go 課題。
- *   反応時間・正誤を記録し、終了後に CSV でダウンロードできる。
- *
- * 【画面フロー】
- *   スタート → 教示 → 練習ブロック → 休憩 → 本試行ブロック → 終了（集計＋CSV）
- *
- * 【1試行のタイムライン】（Robertson らに準拠）
- *   数字提示 250 ms → マスク（十字入り円）900 ms → 合計 SOA 1150 ms
- *   この間にスペース／Enter／クリック／タップで反応を受け付ける。
- *
- * 【VR CPT との関係】
- *   Unity VR 版と列名・指標を揃えやすくするため、CSV に modality 等の
- *   プレースホルダ列（現状は常に None / 0）を含めている。
+ * 流れ: スタート → 教示 → 練習 → 休憩 → 本試行 → 終了（集計＋CSV）
+ * 1試行: 数字 250 ms → マスク 900 ms（SOA 1150 ms）。Space / Enter / クリック / タップ
+ * ルール: 1–9、3 だけ押さない（Commission＝3で押した＝主指標）
+ * ShapeDistract: Sync（数字と同時）/ Async（突発）/ Steady（ゆったり出入り）
+ * 保存: 試行ログ→CSV／セッション要約→localStorage（個人内比較）
  * =============================================================================
  */
 (() => {
   "use strict";
 
-  // ---------------------------------------------------------------------------
-  // 実験パラメータ（論文準拠のタイミング・試行数）
-  // ---------------------------------------------------------------------------
-  /**
-   * WebCPT / app.js — SART 実験の本体（ブラウザだけで動く）
-   * ============================================================
-   * 【他ファイルとの繋がり】
-   *   index.html … すべての id は HTML 側に定義。ここを変えたら HTML も揃える
-   *   styles.css … .hidden / .digit.size-N / .distractor.shape-* / --x,--y,--size
-   *                見た目の数値（pt・色）は CSS。タイミング（ms）は下の CONFIG
-   *
-   * 【流れ】スタート設定 → 教示 → 練習 → 休憩 → 本試行 → 終了（集計・比較・CSV）
-   * 【時間】数字250ms＋マスク900ms＝1試行1150ms（Robertson 1997）
-   * 【ルール】数字1–9、3だけ押さない（Commission＝3で押した＝主指標）
-   * 【ShapeDistract】
-   *   Sync   = 数字と同時に図形（試行の一部）← buildBlock 内
-   *   Async  = 数字と無関係な時刻に画面全体へ突発図形 ← buildAsyncDistractorEvents
-   *   Steady = ゆったり出入りする大きな図形（フェードイン／スライドイン→保持→フェードアウト）
-   *            個数・形・動きは都度ランダム。変化は常に遅い ← buildSteadySchedule + playSteadyDistractors
-   * 【保存】試行ログ→CSV／セッション要約→localStorage（個人内比較用）
-   */
-
-  // --- CONFIG: 実験パラメータ（ここを変えると試行の長さ・妨害の強さが変わる） ---
-  // 文献再現を崩したくない項目: stimulusDurationMs / maskDurationMs / noGoDigit /
-  //   experimentRepeatsPerDigit / fontSizes（段階数は CSS の .size-1〜5 とセット）
+  // --- CONFIG: 実験パラメータ（文献再現を崩したくない: stimulus/mask/noGo/本試行回数/fontSizes） ---
   const CONFIG = {
     paradigm: "SART", // CSV の paradigm 列。分析側のフィルタ名に使う
     noGoDigit: 3, // 変えると「押さない数字」が変わる（教示・Commission定義も要確認）
@@ -57,6 +24,7 @@
     maskDurationMs: 900, // マスク。合計が soaMs。反応受付はこの合計時間
     anticipatoryRtSec: 0.1, // これ未満の RT → CSV anticipatory=1（早押しフラグ）
     practiceRepeatsPerDigit: 2, // 練習: 2×9=18試行。増やすと練習が長くなる
+    practiceFeedbackMs: 500, // 練習のみ: 試行後の正解／ミス表示の長さ
     experimentRepeatsPerDigit: 25, // 本試行: 25×9=225。文献比較の No-Go25 前提
     demoRepeatsPerDigit: 4, // デモON時の本試行: 4×9=36。文献比較はスキップされやすい
     shapeDistractRate: 0.2, // Sync: 妨害付き試行の割合 / Async: ブロック内イベント数の目安
@@ -104,16 +72,12 @@
   // 本比較が出る条件: Baseline かつ demo OFF かつ No-Go 試行数 === noGoTrials
   const NORMS = {
     manly2000: {
-      label: "Manly et al. (2000)",
-      n: 109,
       commissionMean: 6.36,
       commissionSd: 4.36,
       noGoTrials: 25,
       goRtMeanMs: 375,
-      goRtSdMs: 65,
     },
     robertson1997: {
-      label: "Robertson et al. (1997) controls",
       commissionMean: 3.9,
       commissionSd: 2.1,
       noGoTrials: 25,
@@ -144,7 +108,6 @@
     CorrectNoGo: "CorrectNoGo", // No-Go（数字3）で正しく押さなかった
     Omission: "Omission", // Go なのに押さなかった（見逃し）
     Commission: "Commission", // No-Go なのに押した（押し間違い＝SART の主要指標）
-    Anticipatory: "Anticipatory", // 定義はあるが、現状は anticipatory フラグ列で別管理
   };
 
   // --- 画面セクション（index.html の #screen-*）。キーは show("start") 等の引数 ---
@@ -179,6 +142,7 @@
     distractors: document.getElementById("distractor-layer"), // CSS #distractor-layer
     stim: document.getElementById("stimulus"), // CSS .digit
     mask: document.getElementById("mask"), // CSS .mask
+    feedback: document.getElementById("trial-feedback"), // 練習の正誤表示
     restText: document.getElementById("rest-text"),
     stats: document.getElementById("stats"),
     selfCompare: document.getElementById("self-compare"),
@@ -642,16 +606,40 @@
     }
   }
 
+  /** 練習用の正誤フィードバックを隠す */
+  function hideFeedback() {
+    if (!el.feedback) return;
+    el.feedback.classList.add("hidden");
+    el.feedback.classList.remove("is-correct", "is-error");
+    el.feedback.textContent = "";
+  }
+
   /** 数字とマスクを隠す */
   function hideDigitParts() {
     el.stim.classList.add("hidden");
     el.mask.classList.add("hidden");
+    hideFeedback();
   }
 
   /** 数字・マスク・図形を全部消す */
   function hideTaskParts() {
     hideDigitParts();
     clearDistractors();
+  }
+
+  /**
+   * 練習ブロック専用: 試行結果を画面中央に短く出す。
+   * CorrectGo / CorrectNoGo → 「正解」、それ以外（押し忘れ・押し間違い）→ 「ミス」
+   */
+  async function showPracticeFeedback(outcome) {
+    if (!el.feedback) return;
+    const ok =
+      outcome === Outcome.CorrectGo || outcome === Outcome.CorrectNoGo;
+    el.feedback.textContent = ok ? "正解" : "ミス";
+    el.feedback.classList.remove("is-correct", "is-error", "hidden");
+    el.feedback.classList.add(ok ? "is-correct" : "is-error");
+    await waitUntil(performance.now() + CONFIG.practiceFeedbackMs);
+    hideFeedback();
   }
 
   // --- 反応取得（window の keydown / pointerdown。画面は HTML 全体） ---
@@ -766,6 +754,7 @@
       "<strong>3 以外</strong>の数字が出たら、できるだけ早く押してください。",
       "<strong>3</strong> が出たら、押さないでください。",
       "速さも大切ですが、間違いもできるだけ減らしてください。",
+      "練習では、各試行のあと画面に<strong>正解</strong>または<strong>ミス</strong>が表示されます。本試行では出ません。",
     ];
     if (state.conditionKey === "ShapeDistract") {
       let timingNote;
@@ -850,6 +839,11 @@
     const outcome = classify(trial, responded);
     // 100 ms 未満は予測的すぎる反応としてフラグ（分析で除外しやすくする）
     const anticipatory = responded && rtSec < CONFIG.anticipatoryRtSec ? 1 : 0;
+
+    // 練習（blockIndex===0）のみ、試行後に正解／ミスを短く表示。本試行では出さない
+    if (blockIndex === 0 && state.blockActive) {
+      await showPracticeFeedback(outcome);
+    }
 
     let hasTransient = trial.hasTransientDistractor;
     let shapes = trial.distractorShapes;
@@ -951,11 +945,7 @@
     state.activeSteadyWindows = [];
   }
 
-  // --- 集計・表示フォーマット（終了画面 #stats / 比較ボックス） ---
-  /** 本試行ログから Commission / Omission / RT などを集計。outcome 文字列に依存 */
-  // ---------------------------------------------------------------------------
-  // 集計・表示（終了画面）
-  // ---------------------------------------------------------------------------
+  // --- 集計・表示（終了画面 #stats / 比較ボックス） ---
 
   /**
    * 本試行ログから主要指標を計算する。
@@ -1435,15 +1425,8 @@
   }
 
   /**
-   * スタート画面の入力（#participant-id 等）から試行列・Async/Steady を用意し教示へ。
-   * ・demo または URL ?demo=1 → 短い本試行（文献比較スキップされやすい）
-   * ・condition / timing の value は HTML option と CONDITION_META に合わせる
-   * ・timing: Async | Sync | Steady
-   * ・seed の材料を変えると「同じIDでも数字列が変わる」
-   * スタート画面の入力からセッションを準備する。
-   * - デモ: チェックボックス、または URL に ?demo=1
-   * - 参加者IDをファイル名に使える文字だけに正規化
-   * - 練習・本試行の試行列をシード付きで生成
+   * スタート画面の入力から試行列・Async/Steady を用意し教示へ。
+   * demo / ?demo=1 → 短い本試行。timing: Async | Sync | Steady
    */
   function prepareSession() {
     const demo = el.demo.checked || /[?&]demo=1\b/.test(location.search);
