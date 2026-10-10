@@ -33,18 +33,25 @@
         <select id="condition-select">
           <option value="Baseline">Baseline（静穏）</option>
           <option value="ShapeDistract">ShapeDistract（周囲に図形）</option>
+          <option value="IllustDistract">IllustDistract（周囲にイラスト）</option>
+          <option value="AudioDistract">AudioDistract（音声妨害）</option>
+          <option value="NotifyDistract">NotifyDistract（通知風・日本語）</option>
         </select>
 
-        <!-- ShapeDistract のときだけ syncShapeOptionsUi() が表示 -->
+        <!-- 妨害条件のときだけ syncDistractOptionsUi() が表示 -->
         <div id="shape-options" class="hidden">
-          <label for="timing-select">図形のタイミング</label>
+          <label id="timing-label" for="timing-select">妨害のタイミング</label>
           <select id="timing-select">
             <option value="Async">Async（突発・非同期・長め提示）</option>
             <option value="Steady">Steady（ゆったり出入り・回転／スライド／透過）</option>
             <option value="Sync">Sync（数字と同時・試行の一部）</option>
           </select>
-          <p class="note">
+          <p id="timing-note" class="note">
             Async＝突発的に図形が出現／消失。Steady＝大きな図形がゆっくり現れ・消え、動きも都度ランダム（変化は常にゆったり）。Sync＝数字と同時の比較用。
+          </p>
+          <p id="audio-asset-note" class="note hidden">
+            音声ファイルはまだ不要です（機能のみ）。後で
+            <code>assets/audio/</code> に mp3/ogg を置くと再生されます。無いときは無音のまま進行・ログのみ残ります。
           </p>
         </div>
 
@@ -124,14 +131,18 @@
           主要指標は 3 での押し間違い（Commission）です。
         </p>
         <div id="stats" class="stats"></div>
-        <div id="self-compare" class="norm-box"></div>
+
+        <h2 class="subhead">文献（健常・妨害なし）との比較</h2>
         <div id="norm-compare" class="norm-box"></div>
+
+        <h2 class="subhead">過去セッションとの自己比較（多様条件）</h2>
+        <div id="self-compare" class="norm-box"></div>
 
         <h2 class="subhead">この比較の前提</h2>
         <ul class="caveats">
           <li>
             参照値は<strong>妨害刺激なし（Baseline）</strong>の SART 研究からのものです。
-            ShapeDistract など妨害あり条件には当てはまりません。
+            ShapeDistract / IllustDistract / AudioDistract / NotifyDistract など妨害あり条件には当てはまりません。
           </li>
           <li>年齢帯別の規範は使いません（全体の健常報告との概算比較のみ）。</li>
           <li>速さ優先だと Commission が増えやすいです（速さ–正確さのトレードオフ）。</li>

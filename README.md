@@ -2,7 +2,14 @@
 
 A browser-based **SART** (Sustained Attention to Response Task) aligned with Robertson et al. (1997) timing (digit 250 ms + mask 900 ms).
 
-Optional **ShapeDistract** condition adds neutral on-screen shapes (Async / Steady / Sync). No server required.
+Optional distractor conditions:
+
+- **ShapeDistract** — neutral on-screen shapes (Async / Steady / Sync)
+- **IllustDistract** — random illustrations (smartphone / explosion / magic book / clam), same timing modes
+- **AudioDistract** — auditory distractors (same timing modes). Place mp3/ogg under `assets/audio/` when ready; without files the task still runs (silent + logs)
+- **NotifyDistract** — Japanese-only toast notifications (email / like / DM / calendar / news) at screen corners; no sound
+
+No server required.
 
 ## Try it
 
@@ -31,6 +38,9 @@ Response: Space / Enter / tap the screen.
 - **Baseline** — no distractors (rough literature comparison on the results screen)
 - **ShapeDistract** — ignore shapes; respond only to the central digit
   - Async (default), Steady, or Sync timing
+- **IllustDistract** — ignore illustrations; same timing modes as ShapeDistract
+- **AudioDistract** — ignore sounds; same timing modes (files optional until you add them)
+- **NotifyDistract** — ignore on-screen notifications (Japanese text, 5 types)
 
 Demo mode shortens the experimental block.
 
@@ -47,6 +57,8 @@ Nothing is uploaded to GitHub or any server.
 index.html
 styles.css
 app.js
+assets/illustrations/   (IllustDistract PNGs)
+assets/audio/           (AudioDistract clips; see README there)
 ```
 
 ## Citation anchors

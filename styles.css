@@ -222,6 +222,193 @@ button:disabled {
 }
 
 /*
+  IllustDistract 用イラスト。app.js showDistractors() / mountSteadyItem() が
+  class="distractor illust-{smartphone|explosion|magic_book|clam}" を付ける。
+  画像を増やすなら:
+    1) assets/illustrations/ に PNG を置く
+    2) ここに .distractor.illust-名前 を追加
+    3) app.js CONFIG.distractorIllustrations に同じ名前を追加
+*/
+.distractor.illust-distract {
+  background-color: transparent;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
+.distractor.illust-smartphone {
+  background-image: url("assets/illustrations/smartphone.png");
+}
+
+.distractor.illust-explosion {
+  background-image: url("assets/illustrations/explosion.png");
+}
+
+.distractor.illust-magic_book {
+  background-image: url("assets/illustrations/magic_book.png");
+}
+
+.distractor.illust-clam {
+  background-image: url("assets/illustrations/clam.png");
+}
+
+/*
+  NotifyDistract: メール／SNS 風トースト（日本語・音なし）。角固定。
+  app.js createNotifyToastElement() が DOM を生成。
+*/
+.notify-toast {
+  position: absolute;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  width: min(17.5rem, 88vw);
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.65rem;
+  background: rgba(28, 28, 30, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  color: #f2f2f2;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.notify-toast.notify-pop-in {
+  animation: notify-slide-in 0.35s ease-out;
+}
+
+@keyframes notify-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(1.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.notify-corner-br {
+  right: max(0.75rem, 2vw);
+  bottom: max(0.75rem, 2vh);
+  left: auto;
+  top: auto;
+}
+
+.notify-corner-tr {
+  right: max(0.75rem, 2vw);
+  top: max(0.75rem, 2vh);
+  left: auto;
+  bottom: auto;
+}
+
+.notify-corner-bl {
+  left: max(0.75rem, 2vw);
+  bottom: max(0.75rem, 2vh);
+  right: auto;
+  top: auto;
+}
+
+.notify-toast-icon {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.notify-toast-title {
+  font-weight: 650;
+  font-size: 0.84rem;
+  margin-bottom: 0.15rem;
+}
+
+.notify-toast-preview {
+  color: #b8b8b8;
+  font-size: 0.78rem;
+}
+
+.notify-email .notify-toast-icon {
+  background: rgba(90, 140, 255, 0.35);
+}
+
+.notify-sns_like .notify-toast-icon {
+  background: rgba(255, 120, 160, 0.35);
+}
+
+.notify-sns_dm .notify-toast-icon {
+  background: rgba(120, 200, 140, 0.35);
+}
+
+.notify-calendar .notify-toast-icon {
+  background: rgba(255, 180, 80, 0.35);
+}
+
+.notify-news .notify-toast-icon {
+  background: rgba(180, 180, 190, 0.35);
+}
+
+/* Steady 通知: 角固定。サイズはトースト固定 */
+.steady-item.steady-notify {
+  width: min(17.5rem, 88vw);
+  height: auto;
+  transform: none;
+  opacity: 0;
+  transition: opacity var(--fade-in, 8s) ease-in-out;
+}
+
+.steady-item.steady-notify.is-visible {
+  opacity: var(--opacity, 0.92);
+}
+
+.steady-item.steady-notify.is-visible.is-leaving {
+  opacity: 0;
+  transition: opacity var(--fade-out, 8s) ease-in-out;
+}
+
+.steady-item.steady-notify .steady-mover {
+  width: 100%;
+}
+
+.steady-item.steady-notify .notify-toast {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  top: auto;
+  width: 100%;
+}
+
+.steady-item.steady-notify.notify-corner-br {
+  position: absolute;
+  right: max(0.75rem, 2vw);
+  bottom: max(0.75rem, 2vh);
+  left: auto;
+  top: auto;
+}
+
+.steady-item.steady-notify.notify-corner-tr {
+  position: absolute;
+  right: max(0.75rem, 2vw);
+  top: max(0.75rem, 2vh);
+  left: auto;
+  bottom: auto;
+}
+
+.steady-item.steady-notify.notify-corner-bl {
+  position: absolute;
+  left: max(0.75rem, 2vw);
+  bottom: max(0.75rem, 2vh);
+  right: auto;
+  top: auto;
+}
+
+/*
   ========== Steady（ゆったり妨害）==========
   構造: .steady-item（位置・出入りの透明度）> .steady-mover（回転/スライド/透過）> .distractor
   ・left/top は最初から最終位置。入場は transform のずれを戻すだけ
@@ -429,7 +616,7 @@ button:disabled {
 
 /* #self-compare / #norm-compare に app.js が HTML を流し込む箱 */
 .norm-box {
-  margin-top: 1rem;
+  margin-top: 0.45rem;
   padding: 0.85rem 1rem;
   background: #1a1a1a;
   border: 1px solid #333;
@@ -442,6 +629,75 @@ button:disabled {
 .norm-box strong {
   color: #fff;
   color: var(--fg, #fff);
+}
+
+.norm-box > p:first-child {
+  margin-top: 0;
+}
+
+/* 結果ページの比較表（文献・自己） */
+.compare-table-wrap {
+  overflow-x: auto;
+  margin: 0.55rem 0 0.35rem;
+}
+
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.86rem;
+}
+
+.compare-table th,
+.compare-table td {
+  text-align: left;
+  padding: 0.4rem 0.45rem;
+  border-bottom: 1px solid #333;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.compare-table th {
+  color: #ddd;
+  font-weight: 600;
+  background: #141414;
+}
+
+.compare-table tr.is-current td {
+  background: #222;
+  color: #fff;
+}
+
+.compare-table tr.is-baseline td {
+  background: #1c1f1c;
+}
+
+.compare-table .delta-pos {
+  color: #f0a0a0; /* CE/OE 増は悪化寄り */
+}
+
+.compare-table .delta-neg {
+  color: #9fd4a5; /* CE/OE 減は良好寄り */
+}
+
+.compare-table .delta-neutral {
+  color: #a8a8a8;
+}
+
+.compare-banner {
+  margin: 0 0 0.5rem;
+  padding: 0.45rem 0.6rem;
+  background: #2a2418;
+  border: 1px solid #5a4a28;
+  color: #e6d5a8;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.compare-banner.is-ok {
+  background: #1a2420;
+  border-color: #2f4a3a;
+  color: #b8d4c4;
 }
 
 .caveats,

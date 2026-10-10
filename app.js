@@ -7,7 +7,8 @@
  * 流れ: スタート → 教示 → 練習 → 休憩 → 本試行 → 終了（集計＋CSV）
  * 1試行: 数字 250 ms → マスク 900 ms（SOA 1150 ms）。Space / Enter / クリック / タップ
  * ルール: 1–9、3 だけ押さない（Commission＝3で押した＝主指標）
- * ShapeDistract: Sync（数字と同時）/ Async（突発）/ Steady（ゆったり出入り）
+ * ShapeDistract / IllustDistract: Sync（数字と同時）/ Async（突発）/ Steady（ゆったり出入り）
+ * AudioDistract: 同上タイミングで音声（素材は assets/audio/。無くても無音で進行）
  * 保存: 試行ログ→CSV／セッション要約→localStorage（個人内比較）
  * =============================================================================
  */
@@ -28,9 +29,83 @@
     experimentRepeatsPerDigit: 25, // 本試行: 25×9=225。文献比較の No-Go25 前提
     demoRepeatsPerDigit: 4, // デモON時の本試行: 4×9=36。文献比較はスキップされやすい
     shapeDistractRate: 0.2, // Sync: 妨害付き試行の割合 / Async: ブロック内イベント数の目安
-    shapeDistractCount: 1, // 1回の出現で同時に出す図形の個数
+    shapeDistractCount: 1, // 1回の出現で同時に出す図形／イラストの個数
     // 形名は styles.css の .distractor.shape-XXX と一致させること
     distractorShapes: ["square", "triangle", "circle", "diamond"],
+    // イラスト名は styles.css の .distractor.illust-XXX と assets/illustrations/XXX.png と一致
+    distractorIllustrations: ["smartphone", "explosion", "magic_book", "clam"],
+    // NotifyDistract: 5種・日本語のみ（CSV distractor_shapes = type id）
+    distractorNotifyTypes: ["email", "sns_like", "sns_dm", "calendar", "news"],
+    notifyTemplates: {
+      email: {
+        icon: "✉",
+        title: "新着メール",
+        previews: ["田中さんから 1件", "佐藤さんから 1件", "事務局から 1件"],
+      },
+      sns_like: {
+        icon: "♥",
+        title: "いいねがありました",
+        previews: ["あなたの投稿", "先ほどの写真", "共有したリンク"],
+      },
+      sns_dm: {
+        icon: "💬",
+        title: "メッセージ",
+        previews: ["山田: 今大丈夫？", "鈴木: 後で連絡するね", "グループ: 新着 2件"],
+      },
+      calendar: {
+        icon: "📅",
+        title: "予定のリマインダー",
+        previews: ["15分後: ミーティング", "30分後: 面談", "1時間後: 提出期限"],
+      },
+      news: {
+        icon: "📰",
+        title: "ニュース速報",
+        previews: ["国内の最新ニュース", "天気・交通情報", "今日の注目記事"],
+      },
+    },
+    // 音声: ファイルが無くても id だけでスケジュール・CSV 可能。再生は ready なときだけ
+    audioClips: [
+      {
+        id: "notify_soft",
+        file: "assets/audio/notify_soft.mp3",
+        role: "transient", // Async / Sync
+        durationMs: 700,
+      },
+      {
+        id: "email_ping",
+        file: "assets/audio/email_ping.mp3",
+        role: "transient",
+        durationMs: 550,
+      },
+      {
+        id: "sns_pop",
+        file: "assets/audio/sns_pop.mp3",
+        role: "transient",
+        durationMs: 450,
+      },
+      {
+        id: "ambient_hum",
+        file: "assets/audio/ambient_hum.mp3",
+        role: "ambient", // Steady
+        durationMs: 14000,
+      },
+    ],
+    audioDistractRate: 0.2, // Sync: 音付き試行割合 / Async: イベント密度の目安
+    audioVolumeMin: 0.28,
+    audioVolumeMax: 0.55,
+    asyncAudioGapMinMs: 900,
+    asyncAudioLeadInMs: 800,
+    asyncAudioTailMs: 800,
+    steadyAudioEventRate: 0.08,
+    steadyAudioMaxConcurrent: 1,
+    steadyAudioFadeInMinMs: 4000,
+    steadyAudioFadeInMaxMs: 9000,
+    steadyAudioHoldMinMs: 8000,
+    steadyAudioHoldMaxMs: 20000,
+    steadyAudioFadeOutMinMs: 4000,
+    steadyAudioFadeOutMaxMs: 9000,
+    steadyAudioLeadInMs: 800,
+    steadyAudioTailMs: 1500,
     distractorEdgePadPct: 4, // 画面端からの余白%。大きくすると中央寄りに集まる
     distractorSizeMinRem: 1.2, // CSS --size の下限（rem）
     distractorSizeMaxRem: 6.5, // 上限。数字より大きくてよい（Asyncの設計意図）
@@ -99,7 +174,110 @@
       meaningfulness: "Neutral",
       temporal: "Transient", // Sync/Async。Steady は buildBlock で "Steady" に上書き
     },
+    IllustDistract: {
+      condition: "IllustDistract",
+      modality: "Visual",
+      meaningfulness: "Meaningful",
+      temporal: "Transient",
+    },
+    AudioDistract: {
+      condition: "AudioDistract",
+      modality: "Auditory",
+      meaningfulness: "Meaningful",
+      temporal: "Transient",
+    },
+    NotifyDistract: {
+      condition: "NotifyDistract",
+      modality: "Visual",
+      meaningfulness: "Meaningful",
+      temporal: "Transient",
+    },
   };
+
+  /** タイミング UI（Async/Steady/Sync）を使う妨害条件か */
+  function usesDistractTiming(key) {
+    return (
+      key === "ShapeDistract" ||
+      key === "IllustDistract" ||
+      key === "AudioDistract" ||
+      key === "NotifyDistract"
+    );
+  }
+
+  /** 視覚妨害（図形／イラスト／通知）か */
+  function isVisualDistractCondition(key) {
+    return (
+      key === "ShapeDistract" ||
+      key === "IllustDistract" ||
+      key === "NotifyDistract"
+    );
+  }
+
+  /** 聴覚妨害か */
+  function isAudioDistractCondition(key) {
+    return key === "AudioDistract";
+  }
+
+  /** "shape" | "illust" | "notify" */
+  function distractorKindFor(conditionKey) {
+    if (conditionKey === "IllustDistract") return "illust";
+    if (conditionKey === "NotifyDistract") return "notify";
+    return "shape";
+  }
+
+  /** 通知トーストの表示位置（右下 70% / 右上 15% / 左下 15%） */
+  function pickNotifyCorner(rng) {
+    const r = rng();
+    if (r < 0.7) return "br";
+    if (r < 0.85) return "tr";
+    return "bl";
+  }
+
+  function notifyCopyFor(typeId, rng) {
+    const tpl = CONFIG.notifyTemplates[typeId];
+    if (!tpl) {
+      return { icon: "●", title: "通知", preview: "" };
+    }
+    return {
+      icon: tpl.icon,
+      title: tpl.title,
+      preview: pick(tpl.previews, rng),
+    };
+  }
+
+  function buildNotifyDistractors(rng) {
+    const typeId = pick(CONFIG.distractorNotifyTypes, rng);
+    const copy = notifyCopyFor(typeId, rng);
+    const corner = pickNotifyCorner(rng);
+    return [
+      {
+        kind: "notify",
+        shape: typeId,
+        corner,
+        title: copy.title,
+        preview: copy.preview,
+        icon: copy.icon,
+        xPct: 0,
+        yPct: 0,
+        sizeRem: 0,
+      },
+    ];
+  }
+
+  function createNotifyToastElement(item, extraClass = "", { embed = false } = {}) {
+    const node = document.createElement("div");
+    const typeClass = `notify-${item.shape}`;
+    const cornerCls = embed ? "" : ` notify-corner-${item.corner}`;
+    node.className = `notify-toast ${typeClass}${cornerCls}${extraClass ? ` ${extraClass}` : ""}`;
+    node.setAttribute("role", "presentation");
+    node.innerHTML = `
+      <div class="notify-toast-icon" aria-hidden="true">${item.icon || "●"}</div>
+      <div class="notify-toast-body">
+        <div class="notify-toast-title">${item.title || ""}</div>
+        <div class="notify-toast-preview">${item.preview || ""}</div>
+      </div>`;
+    return node;
+  }
 
   // --- 試行の結果ラベル（CSV outcome 列・summarize の集計キー） ---
   // 文字列を変えると既存CSV・分析スクリプトとの互換が切れる
@@ -165,11 +343,179 @@
     expAsyncEvents: [],
     practiceSteadyEvents: [], // Steady: ゆったり出入りのイベント列
     expSteadyEvents: [],
+    practiceAudioEvents: [], // Audio Async / Steady イベント
+    expAudioEvents: [],
     activeAsyncWindows: [], // Asyncの絶対時刻窓。試行ログの重なり判定用
     activeSteadyWindows: [], // Steadyの可視区間窓（フェードイン開始〜アウト完了）
+    activeAudioWindows: [], // 音声イベントの絶対時刻窓
+    activeAudioNodes: [], // 再生中 HTMLAudioElement（停止用）
     logs: [], // 全試行（練習+本試行）。CSV・集計の元
     listening: false,
     response: null, // { t: performance.now() } 最初の1回だけ
+  };
+
+  // --- 音声バンク（素材なしでもスケジュール・ログは動く） ---
+  const AudioBank = {
+    byId: Object.create(null),
+    unlocked: false,
+    preloadStarted: false,
+
+    /** CONFIG.audioClips を読み込み開始。失敗しても課題は続行 */
+    preloadAll() {
+      if (this.preloadStarted) return;
+      this.preloadStarted = true;
+      for (const meta of CONFIG.audioClips) {
+        const entry = {
+          id: meta.id,
+          file: meta.file,
+          role: meta.role,
+          durationMs: meta.durationMs,
+          ready: false,
+          el: null,
+        };
+        this.byId[meta.id] = entry;
+        const audio = new Audio();
+        audio.preload = "auto";
+        audio.src = meta.file;
+        entry.el = audio;
+        const markReady = () => {
+          entry.ready = true;
+          if (Number.isFinite(audio.duration) && audio.duration > 0) {
+            entry.durationMs = Math.round(audio.duration * 1000);
+          }
+        };
+        audio.addEventListener("canplaythrough", markReady, { once: true });
+        audio.addEventListener("loadedmetadata", markReady, { once: true });
+        audio.addEventListener(
+          "error",
+          () => {
+            entry.ready = false;
+            // 素材未配置時は想定どおり。1回だけ控えめに知らせる
+            console.info(`[AudioDistract] 未配置または読込失敗: ${meta.file}`);
+          },
+          { once: true }
+        );
+        audio.load();
+      }
+    },
+
+    /** ユーザ操作内で呼ぶ（ブラウザの自動再生制限解除） */
+    unlock() {
+      this.unlocked = true;
+      this.preloadAll();
+      // 無音に近い再生でポリシー解除を試す（失敗しても無視）
+      for (const entry of Object.values(this.byId)) {
+        if (!entry.el) continue;
+        try {
+          entry.el.muted = true;
+          const p = entry.el.play();
+          if (p && typeof p.then === "function") {
+            p.then(() => {
+              entry.el.pause();
+              entry.el.currentTime = 0;
+              entry.el.muted = false;
+            }).catch(() => {
+              entry.el.muted = false;
+            });
+          }
+        } catch (_err) {
+          /* ignore */
+        }
+      }
+    },
+
+    clipsForRole(role) {
+      return CONFIG.audioClips.filter((c) => c.role === role);
+    },
+
+    pickClip(role, rng) {
+      const pool = this.clipsForRole(role);
+      if (!pool.length) return null;
+      return pick(pool, rng);
+    },
+
+    /**
+     * 1回再生。未配置・未解除でも null を返し、課題は止めない。
+     * @returns {{ node: HTMLAudioElement, played: boolean } | null}
+     */
+    play(id, volume) {
+      const entry = this.byId[id];
+      if (!entry) return null;
+      if (!entry.ready || !entry.el) {
+        return { node: null, played: false, id, reason: "not_ready" };
+      }
+      try {
+        const node = entry.el.cloneNode(true);
+        node.volume = Math.max(0, Math.min(1, volume));
+        state.activeAudioNodes.push(node);
+        const cleanup = () => {
+          state.activeAudioNodes = state.activeAudioNodes.filter((n) => n !== node);
+        };
+        node.addEventListener("ended", cleanup, { once: true });
+        const p = node.play();
+        if (p && typeof p.catch === "function") {
+          p.catch(() => {
+            cleanup();
+          });
+        }
+        return { node, played: true, id };
+      } catch (_err) {
+        return { node: null, played: false, id, reason: "play_error" };
+      }
+    },
+
+    /** 再生中ノードをすべて停止 */
+    stopAll() {
+      for (const node of state.activeAudioNodes.slice()) {
+        try {
+          node.pause();
+          node.currentTime = 0;
+        } catch (_err) {
+          /* ignore */
+        }
+      }
+      state.activeAudioNodes = [];
+    },
+
+    /** Steady 用: 簡易フェード（GainNode なし。素材が無いときは何もしない） */
+    async playWithFade(id, volume, fadeInMs, holdMs, fadeOutMs, blockStartAbs, onsetMs) {
+      await waitUntil(blockStartAbs + onsetMs);
+      if (!state.blockActive) return;
+      const started = this.play(id, 0.01);
+      if (!started || !started.played || !started.node) return;
+      const node = started.node;
+      const steps = 12;
+      const vol = Math.max(0.01, Math.min(1, volume));
+      // fade in
+      for (let i = 1; i <= steps; i += 1) {
+        if (!state.blockActive) break;
+        node.volume = (vol * i) / steps;
+        await waitUntil(blockStartAbs + onsetMs + Math.round((fadeInMs * i) / steps));
+      }
+      node.volume = vol;
+      await waitUntil(blockStartAbs + onsetMs + fadeInMs + holdMs);
+      if (!state.blockActive) {
+        try {
+          node.pause();
+        } catch (_err) {
+          /* ignore */
+        }
+        return;
+      }
+      const fadeStart = blockStartAbs + onsetMs + fadeInMs + holdMs;
+      for (let i = 1; i <= steps; i += 1) {
+        if (!state.blockActive) break;
+        node.volume = vol * (1 - i / steps);
+        await waitUntil(fadeStart + Math.round((fadeOutMs * i) / steps));
+      }
+      try {
+        node.pause();
+        node.currentTime = 0;
+      } catch (_err) {
+        /* ignore */
+      }
+      state.activeAudioNodes = state.activeAudioNodes.filter((n) => n !== node);
+    },
   };
 
   /**
@@ -183,11 +529,34 @@
 
   /**
    * スタート画面: 条件セレクト → #shape-options の表示切替。
-   * HTML の option value "ShapeDistract" と文字列が一致している必要がある。
+   * Shape / Illust / Audio のとき表示。
    */
-  function syncShapeOptionsUi() {
-    const on = el.condition.value === "ShapeDistract";
+  function syncDistractOptionsUi() {
+    const key = el.condition.value;
+    const on = usesDistractTiming(key);
     el.shapeOptions.classList.toggle("hidden", !on);
+    const label = document.getElementById("timing-label");
+    const note = document.getElementById("timing-note");
+    const audioNote = document.getElementById("audio-asset-note");
+    if (audioNote) audioNote.classList.toggle("hidden", key !== "AudioDistract");
+    if (!on || !label || !note) return;
+    if (key === "IllustDistract") {
+      label.textContent = "イラストのタイミング";
+      note.textContent =
+        "Async＝突発的にイラストが出現／消失。Steady＝大きなイラストがゆっくり現れ・消え、動きも都度ランダム（変化は常にゆったり）。Sync＝数字と同時の比較用。";
+    } else if (key === "AudioDistract") {
+      label.textContent = "音声のタイミング";
+      note.textContent =
+        "Async＝数字と独立して短い音。Steady＝環境音がゆっくり出入り。Sync＝数字と同時に短い音（一部試行）。素材未配置でも無音で進行します。";
+    } else if (key === "NotifyDistract") {
+      label.textContent = "通知のタイミング";
+      note.textContent =
+        "Async＝画面の角に通知風の表示が突発的に出る。Steady＝ゆっくり出入り。Sync＝数字と同時（一部試行）。音は鳴りません（日本語テキストのみ）。";
+    } else {
+      label.textContent = "図形のタイミング";
+      note.textContent =
+        "Async＝突発的に図形が出現／消失。Steady＝大きな図形がゆっくり現れ・消え、動きも都度ランダム（変化は常にゆったり）。Sync＝数字と同時の比較用。";
+    }
   }
 
   // --- 乱数（同じ seed なら同じ数字列・図形配置＝再現可能） ---
@@ -284,13 +653,16 @@
   }
 
   /**
-   * 図形1セットを作る → showDistractors() → CSS --x/--y/--size + .shape-*。
-   * 位置・サイズの範囲は CONFIG.distractor*。形名は distractorShapes ↔ styles.css。
+   * 妨害1セットを作る → showDistractors() → CSS --x/--y/--size + .shape-* / .illust-*。
+   * kind: "shape" | "illust"。形／イラスト名は CONFIG と styles.css と一致させること。
    */
-  function buildShapeDistractors(rng) {
+  function buildShapeDistractors(rng, kind = "shape") {
+    if (kind === "notify") return buildNotifyDistractors(rng);
     const count = CONFIG.shapeDistractCount;
     const pad = CONFIG.distractorEdgePadPct;
     const span = Math.max(1, 100 - pad * 2);
+    const pool =
+      kind === "illust" ? CONFIG.distractorIllustrations : CONFIG.distractorShapes;
     const out = [];
     for (let i = 0; i < count; i += 1) {
       const sizeRem =
@@ -298,7 +670,8 @@
           randRange(rng, CONFIG.distractorSizeMinRem, CONFIG.distractorSizeMaxRem) * 10
         ) / 10;
       out.push({
-        shape: pick(CONFIG.distractorShapes, rng),
+        kind,
+        shape: pick(pool, rng),
         xPct: Math.round((pad + rng() * span) * 10) / 10,
         yPct: Math.round((pad + rng() * span) * 10) / 10,
         sizeRem,
@@ -307,12 +680,27 @@
     return out;
   }
 
+  /** DOM 用クラス名（.shape-* または .illust-distract.illust-*） */
+  function distractorClassName(item, extra = "") {
+    const kind = item.kind || "shape";
+    if (kind === "notify") {
+      return extra ? `notify-toast-inner ${extra}` : "notify-toast-inner";
+    }
+    const base =
+      kind === "illust"
+        ? `distractor illust-distract illust-${item.shape}`
+        : `distractor shape-${item.shape}`;
+    return extra ? `${base} ${extra}` : base;
+  }
+
   /** CSV列 distractor_shapes / positions / sizes 用に「|」区切りへ */
   function formatDistractorMeta(distractors) {
     return {
       shapes: distractors.map((d) => d.shape).join("|"),
-      positions: distractors.map((d) => `${d.xPct},${d.yPct}`).join("|"),
-      sizes: distractors.map((d) => d.sizeRem).join("|"),
+      positions: distractors
+        .map((d) => (d.kind === "notify" ? d.corner : `${d.xPct},${d.yPct}`))
+        .join("|"),
+      sizes: distractors.map((d) => (d.kind === "notify" ? "toast" : d.sizeRem)).join("|"),
     };
   }
 
@@ -322,7 +710,8 @@
    * ・形・動き・位置・周期はイベントごとにランダム（固定3枠ではない）
    * ・同時表示は steadyMaxConcurrent 以下。変化は常に秒単位で遅い
    */
-  function buildSteadySchedule(nTrials, seed) {
+  function buildSteadySchedule(nTrials, seed, kind = "shape") {
+    if (kind === "notify") return buildSteadyNotifySchedule(nTrials, seed);
     const rng = mulberry32(seed);
     const pad = CONFIG.steadyEdgePadPct;
     const peripheralZones = [
@@ -380,7 +769,9 @@
       const opacity =
         Math.round(randRange(rng, CONFIG.steadyOpacityMin, CONFIG.steadyOpacityMax) * 100) / 100;
       const durationSec = Math.round(periodFor(motion) * 10) / 10;
-      const shape = pick(CONFIG.distractorShapes, rng);
+      const pool =
+        kind === "illust" ? CONFIG.distractorIllustrations : CONFIG.distractorShapes;
+      const shape = pick(pool, rng);
 
       events.push({
         onsetMs,
@@ -388,6 +779,7 @@
         fadeInMs,
         holdMs,
         fadeOutMs,
+        kind,
         shape,
         xPct,
         yPct,
@@ -409,8 +801,82 @@
     return events;
   }
 
+  /** Steady 用: 角の通知トースト（回転なし・slide/fade のみ） */
+  function buildSteadyNotifySchedule(nTrials, seed) {
+    const rng = mulberry32(seed);
+    const blockMs = CONFIG.blockPreambleMs + nTrials * CONFIG.soaMs;
+    const usableStart = CONFIG.steadyLeadInMs;
+    const usableEnd = Math.max(usableStart, blockMs - CONFIG.steadyTailMs);
+    const nTarget = Math.max(1, Math.round(nTrials * CONFIG.steadyEventRate * 0.85));
+    const events = [];
+    const motions = ["slide", "fade"];
+
+    const activeCountAt = (t0, t1, list) =>
+      list.filter((ev) => intervalsOverlap(t0, t1, ev.onsetMs, ev.endMs, 0)).length;
+
+    for (let attempt = 0; attempt < 800 && events.length < nTarget; attempt += 1) {
+      const fadeInMs = Math.round(randRange(rng, CONFIG.steadyFadeInMinMs, CONFIG.steadyFadeInMaxMs));
+      const holdMs = Math.round(randRange(rng, CONFIG.steadyHoldMinMs, CONFIG.steadyHoldMaxMs));
+      const fadeOutMs = Math.round(
+        randRange(rng, CONFIG.steadyFadeOutMinMs, CONFIG.steadyFadeOutMaxMs)
+      );
+      const durationMs = fadeInMs + holdMs + fadeOutMs;
+      const span = Math.max(0, usableEnd - usableStart - durationMs);
+      if (span <= 0) break;
+      const onsetMs = Math.round(usableStart + rng() * span);
+      const endMs = onsetMs + durationMs;
+      if (activeCountAt(onsetMs, endMs, events) >= 2) continue;
+
+      const typeId = pick(CONFIG.distractorNotifyTypes, rng);
+      const copy = notifyCopyFor(typeId, rng);
+      const corner = pickNotifyCorner(rng);
+      const motion = pick(motions, rng);
+      const durationSec = Math.round(randRange(rng, 35, 70) * 10) / 10;
+      const opacity =
+        Math.round(randRange(rng, 0.75, 0.95) * 100) / 100;
+
+      events.push({
+        onsetMs,
+        endMs,
+        fadeInMs,
+        holdMs,
+        fadeOutMs,
+        kind: "notify",
+        shape: typeId,
+        corner,
+        title: copy.title,
+        preview: copy.preview,
+        icon: copy.icon,
+        motion,
+        durationSec,
+        opacity,
+        shapes: typeId,
+        positions: corner,
+        sizes: "toast",
+      });
+    }
+
+    events.sort((a, b) => a.onsetMs - b.onsetMs);
+    return events;
+  }
+
   /** Steady 1体を DOM に追加。位置は最初から最終位置。動きは内側 .steady-mover に分離 */
   function mountSteadyItem(ev) {
+    if (ev.kind === "notify") {
+      const wrap = document.createElement("div");
+      wrap.className = `steady-item steady-notify notify-corner-${ev.corner}`;
+      wrap.style.setProperty("--opacity", String(ev.opacity));
+      wrap.style.setProperty("--fade-in", `${ev.fadeInMs}ms`);
+      wrap.style.setProperty("--fade-out", `${ev.fadeOutMs}ms`);
+      wrap.style.setProperty("--dur", `${ev.durationSec}s`);
+      const mover = document.createElement("div");
+      mover.className = `steady-mover motion-${ev.motion}`;
+      mover.appendChild(createNotifyToastElement(ev, "", { embed: true }));
+      wrap.appendChild(mover);
+      el.distractors.appendChild(wrap);
+      return wrap;
+    }
+
     const wrap = document.createElement("div");
     wrap.className = "steady-item";
     wrap.style.setProperty("--x", `${ev.xPct}%`);
@@ -431,7 +897,7 @@
     mover.className = `steady-mover motion-${ev.motion}`;
 
     const node = document.createElement("div");
-    node.className = `distractor shape-${ev.shape} distractor-steady-inner`;
+    node.className = distractorClassName(ev, "distractor-steady-inner");
     mover.appendChild(node);
     wrap.appendChild(mover);
     el.distractors.appendChild(wrap);
@@ -493,7 +959,7 @@
    *   shapeDistractRate / asyncDuration* / asyncGap* / asyncLeadIn|Tail
    *   → 出現回数・長さ・密度 → CSV の has_transient_distractor / overlap_ms
    */
-  function buildAsyncDistractorEvents(nTrials, seed) {
+  function buildAsyncDistractorEvents(nTrials, seed, kind = "shape") {
     const rng = mulberry32(seed);
     const blockMs = CONFIG.blockPreambleMs + nTrials * CONFIG.soaMs;
     const usableStart = CONFIG.asyncLeadInMs;
@@ -513,7 +979,7 @@
         intervalsOverlap(onsetMs, endMs, ev.onsetMs, ev.onsetMs + ev.durationMs, CONFIG.asyncGapMinMs)
       );
       if (clash) continue;
-      const distractors = buildShapeDistractors(rng);
+      const distractors = buildShapeDistractors(rng, kind);
       const meta = formatDistractorMeta(distractors);
       events.push({
         onsetMs,
@@ -530,20 +996,191 @@
   }
 
   /**
+   * Async 音声イベント列。素材が無くても id / 予定長でログ可能。
+   * CSV: distractor_shapes=clipId, positions="audio", sizes=volume
+   */
+  function buildAsyncAudioEvents(nTrials, seed) {
+    const rng = mulberry32(seed);
+    const blockMs = CONFIG.blockPreambleMs + nTrials * CONFIG.soaMs;
+    const usableStart = CONFIG.asyncAudioLeadInMs;
+    const usableEnd = Math.max(usableStart, blockMs - CONFIG.asyncAudioTailMs);
+    const n = Math.max(0, Math.round(nTrials * CONFIG.audioDistractRate));
+    const events = [];
+    const pool = AudioBank.clipsForRole("transient");
+    if (!pool.length) return events;
+
+    for (let attempt = 0; attempt < 800 && events.length < n; attempt += 1) {
+      const clip = pick(pool, rng);
+      const entry = AudioBank.byId[clip.id];
+      const durationMs = entry && entry.durationMs ? entry.durationMs : clip.durationMs;
+      const span = Math.max(0, usableEnd - usableStart - durationMs);
+      if (span <= 0) break;
+      const onsetMs = Math.round(usableStart + rng() * span);
+      const endMs = onsetMs + durationMs;
+      const clash = events.some((ev) =>
+        intervalsOverlap(
+          onsetMs,
+          endMs,
+          ev.onsetMs,
+          ev.onsetMs + ev.durationMs,
+          CONFIG.asyncAudioGapMinMs
+        )
+      );
+      if (clash) continue;
+      const volume =
+        Math.round(randRange(rng, CONFIG.audioVolumeMin, CONFIG.audioVolumeMax) * 100) / 100;
+      events.push({
+        onsetMs,
+        durationMs,
+        clipId: clip.id,
+        volume,
+        shapes: clip.id,
+        positions: "audio",
+        sizes: String(volume),
+      });
+    }
+
+    events.sort((a, b) => a.onsetMs - b.onsetMs);
+    return events;
+  }
+
+  /** Steady 環境音の出入りスケジュール（同時は steadyAudioMaxConcurrent 以下） */
+  function buildSteadyAudioSchedule(nTrials, seed) {
+    const rng = mulberry32(seed);
+    const blockMs = CONFIG.blockPreambleMs + nTrials * CONFIG.soaMs;
+    const usableStart = CONFIG.steadyAudioLeadInMs;
+    const usableEnd = Math.max(usableStart, blockMs - CONFIG.steadyAudioTailMs);
+    const nTarget = Math.max(1, Math.round(nTrials * CONFIG.steadyAudioEventRate));
+    const events = [];
+    const pool = AudioBank.clipsForRole("ambient");
+    if (!pool.length) return events;
+
+    const activeCountAt = (t0, t1, list) =>
+      list.filter((ev) => intervalsOverlap(t0, t1, ev.onsetMs, ev.endMs, 0)).length;
+
+    for (let attempt = 0; attempt < 800 && events.length < nTarget; attempt += 1) {
+      const fadeInMs = Math.round(
+        randRange(rng, CONFIG.steadyAudioFadeInMinMs, CONFIG.steadyAudioFadeInMaxMs)
+      );
+      const holdMs = Math.round(
+        randRange(rng, CONFIG.steadyAudioHoldMinMs, CONFIG.steadyAudioHoldMaxMs)
+      );
+      const fadeOutMs = Math.round(
+        randRange(rng, CONFIG.steadyAudioFadeOutMinMs, CONFIG.steadyAudioFadeOutMaxMs)
+      );
+      const durationMs = fadeInMs + holdMs + fadeOutMs;
+      const span = Math.max(0, usableEnd - usableStart - durationMs);
+      if (span <= 0) break;
+      const onsetMs = Math.round(usableStart + rng() * span);
+      const endMs = onsetMs + durationMs;
+      if (activeCountAt(onsetMs, endMs, events) >= CONFIG.steadyAudioMaxConcurrent) continue;
+      const clip = pick(pool, rng);
+      const volume =
+        Math.round(randRange(rng, CONFIG.audioVolumeMin, CONFIG.audioVolumeMax) * 100) / 100;
+      events.push({
+        onsetMs,
+        endMs,
+        fadeInMs,
+        holdMs,
+        fadeOutMs,
+        clipId: clip.id,
+        volume,
+        shapes: clip.id,
+        positions: "audio",
+        sizes: String(volume),
+      });
+    }
+
+    events.sort((a, b) => a.onsetMs - b.onsetMs);
+    return events;
+  }
+
+  /** Async 音声をブロックと並行再生 */
+  async function playAsyncAudioEvents(events, blockStartAbs) {
+    state.activeAudioWindows = events.map((ev) => ({
+      startAbs: blockStartAbs + ev.onsetMs,
+      endAbs: blockStartAbs + ev.onsetMs + ev.durationMs,
+      shapes: ev.shapes,
+      positions: ev.positions,
+      sizes: ev.sizes || "",
+    }));
+
+    for (const ev of events) {
+      if (!state.blockActive) return;
+      await waitUntil(blockStartAbs + ev.onsetMs);
+      if (!state.blockActive) return;
+      AudioBank.play(ev.clipId, ev.volume);
+      await waitUntil(blockStartAbs + ev.onsetMs + ev.durationMs);
+    }
+  }
+
+  /** Steady 環境音を並行再生（フェード付き） */
+  async function playSteadyAudioEvents(events, blockStartAbs) {
+    state.activeAudioWindows = events.map((ev) => ({
+      startAbs: blockStartAbs + ev.onsetMs,
+      endAbs: blockStartAbs + ev.endMs,
+      shapes: ev.shapes,
+      positions: ev.positions,
+      sizes: ev.sizes || "",
+    }));
+    await Promise.all(
+      events.map((ev) =>
+        AudioBank.playWithFade(
+          ev.clipId,
+          ev.volume,
+          ev.fadeInMs,
+          ev.holdMs,
+          ev.fadeOutMs,
+          blockStartAbs,
+          ev.onsetMs
+        )
+      )
+    );
+  }
+
+  /** 試行区間と音声窓の重なり（Async / Steady 共通） */
+  function describeAudioOverlap(trialStartAbs, trialEndAbs) {
+    const hits = (state.activeAudioWindows || []).filter((w) =>
+      intervalsOverlap(trialStartAbs, trialEndAbs, w.startAbs, w.endAbs, 0)
+    );
+    if (!hits.length) {
+      return { has: 0, shapes: "", positions: "", sizes: "", overlap: 0 };
+    }
+    let overlap = 0;
+    for (const w of hits) {
+      const a0 = Math.max(trialStartAbs, w.startAbs);
+      const a1 = Math.min(trialEndAbs, w.endAbs);
+      overlap += Math.max(0, a1 - a0);
+    }
+    return {
+      has: 1,
+      shapes: hits.map((w) => w.shapes).join(";"),
+      positions: hits.map((w) => w.positions).join(";"),
+      sizes: hits.map((w) => w.sizes || "").join(";"),
+      overlap: Math.round(overlap),
+    };
+  }
+
+  /**
    * 1ブロック分の試行列を組み立てる（prepareSession → practiceTrials / expTrials）。
-   * Sync+ShapeDistract のときだけ hasTransientDistractor と distractors[] を試行に付ける。
-   * Steady の図形スケジュールは別（buildSteadySchedule）。試行時点の重なりはログ時に判定。
-   * Async の図形スケジュールも別（buildAsyncDistractorEvents）。混ぜると二重に出るので注意。
+   * Sync+視覚/音声 のとき hasTransientDistractor を試行に付ける。
+   * Steady / Async のスケジュールは別関数。混ぜると二重に出るので注意。
    */
   function buildBlock(repeatsPerDigit, seed, conditionKey, timingMode) {
     const rng = mulberry32(seed);
     const digits = buildDigitSequence(repeatsPerDigit, rng);
     const meta = CONDITION_META[conditionKey] || CONDITION_META.Baseline;
-    const useSyncShapes = conditionKey === "ShapeDistract" && timingMode === "Sync";
-    const useSteady = conditionKey === "ShapeDistract" && timingMode === "Steady";
-    const distractorTrials = useSyncShapes
-      ? chooseDistractorTrials(digits.length, CONFIG.shapeDistractRate, rng)
-      : new Set();
+    const kind = distractorKindFor(conditionKey);
+    const useSyncVisual = isVisualDistractCondition(conditionKey) && timingMode === "Sync";
+    const useSyncAudio = isAudioDistractCondition(conditionKey) && timingMode === "Sync";
+    const useSteady =
+      (isVisualDistractCondition(conditionKey) || isAudioDistractCondition(conditionKey)) &&
+      timingMode === "Steady";
+    const rate = useSyncAudio ? CONFIG.audioDistractRate : CONFIG.shapeDistractRate;
+    const distractorTrials =
+      useSyncVisual || useSyncAudio
+        ? chooseDistractorTrials(digits.length, rate, rng)
+        : new Set();
     const temporal = useSteady ? "Steady" : meta.temporal;
 
     return digits.map((digit, trialIndex) => {
@@ -551,8 +1188,27 @@
       // 5 段階のフォントサイズからランダム（大きさは無視するよう教示）
       const fontSize = CONFIG.fontSizes[Math.floor(rng() * CONFIG.fontSizes.length)];
       const hasDistractor = distractorTrials.has(trialIndex);
-      const distractors = hasDistractor ? buildShapeDistractors(rng) : [];
-      const dMeta = formatDistractorMeta(distractors);
+      let distractors = [];
+      let dMeta = { shapes: "", positions: "", sizes: "" };
+      let audioClip = null;
+
+      if (hasDistractor && useSyncVisual) {
+        distractors = buildShapeDistractors(rng, kind);
+        dMeta = formatDistractorMeta(distractors);
+      } else if (hasDistractor && useSyncAudio) {
+        const clip = AudioBank.pickClip("transient", rng);
+        if (clip) {
+          const volume =
+            Math.round(randRange(rng, CONFIG.audioVolumeMin, CONFIG.audioVolumeMax) * 100) / 100;
+          audioClip = { id: clip.id, volume };
+          dMeta = {
+            shapes: clip.id,
+            positions: "audio",
+            sizes: String(volume),
+          };
+        }
+      }
+
       return {
         trialIndex,
         condition: meta.condition,
@@ -564,11 +1220,12 @@
         stimulusType,
         soaSec: CONFIG.soaMs / 1000,
         hasTransientDistractor: hasDistractor ? 1 : 0,
-        hasSteadyVisual: 0, // Steady は describeSteadyOverlap で試行ごとに埋める
+        hasSteadyVisual: 0, // Steady は describeSteadyOverlap / describeAudioOverlap で埋める
         distractorShapes: dMeta.shapes,
         distractorPositions: dMeta.positions,
         distractorSizes: dMeta.sizes,
         distractors,
+        audioClip,
       };
     });
   }
@@ -591,14 +1248,18 @@
   }
 
   /**
-   * 図形を DOM に載せる。CSS: .distractor + .shape-* + 変数 --x/--y/--size。
-   * styles.css に無い shape 名を渡すと白い四角にもならない（見え方不定）。
+   * 妨害を DOM に載せる。CSS: .distractor + .shape-* / .illust-* + 変数 --x/--y/--size。
+   * styles.css に無い名前を渡すと見え方不定。
    */
   function showDistractors(distractors) {
     clearDistractors();
     for (const item of distractors) {
+      if (item.kind === "notify") {
+        el.distractors.appendChild(createNotifyToastElement(item, "notify-pop-in"));
+        continue;
+      }
       const node = document.createElement("div");
-      node.className = `distractor shape-${item.shape}`;
+      node.className = distractorClassName(item);
       node.style.setProperty("--x", `${item.xPct}%`);
       node.style.setProperty("--y", `${item.yPct}%`);
       node.style.setProperty("--size", `${item.sizeRem}rem`);
@@ -745,7 +1406,7 @@
 
   /**
    * 条件に応じて #instruct-list の文言を差し替え（index.html の初期リストを上書き）。
-   * ShapeDistract のときだけ図形無視の一文を挿入（Async / Sync / Steady で文言が違う）。
+   * ShapeDistract / IllustDistract のとき妨害無視の一文を挿入（Async / Sync / Steady で文言が違う）。
    */
   function updateInstruct() {
     const base = [
@@ -767,6 +1428,45 @@
       } else {
         timingNote =
           "画面のあちこちに四角・三角などの図形が、数字と同時に出ることがあります。<strong>図形は無視</strong>し、中央の数字だけに反応してください。";
+      }
+      base.splice(2, 0, timingNote);
+    } else if (state.conditionKey === "IllustDistract") {
+      let timingNote;
+      if (state.timingMode === "Async") {
+        timingNote =
+          "画面のあちこちにスマートフォン・爆発・魔導書・貝などのイラストが、数字とは独立したタイミング・大きさ・長さで出ることがあります。<strong>イラストは無視</strong>し、中央の数字だけに反応してください。";
+      } else if (state.timingMode === "Steady") {
+        timingNote =
+          "画面には大きなイラストが、ゆっくり現れたり消えたり、回転・移動・濃さの変化をすることがあります。急に点滅するものではありません。<strong>イラストは無視</strong>し、中央の数字だけに反応してください。";
+      } else {
+        timingNote =
+          "画面のあちこちにスマートフォン・爆発・魔導書・貝などのイラストが、数字と同時に出ることがあります。<strong>イラストは無視</strong>し、中央の数字だけに反応してください。";
+      }
+      base.splice(2, 0, timingNote);
+    } else if (state.conditionKey === "NotifyDistract") {
+      let timingNote;
+      if (state.timingMode === "Async") {
+        timingNote =
+          "画面の角（主に右下）に、メール・いいね・メッセージ・予定・ニュース風の<strong>日本語の通知</strong>が、数字とは独立したタイミングで出ることがあります。音は鳴りません。<strong>通知は無視</strong>し、中央の数字だけに反応してください。";
+      } else if (state.timingMode === "Steady") {
+        timingNote =
+          "画面の角に通知風の表示が、ゆっくり現れたり消えたりすることがあります。音は鳴りません。<strong>通知は無視</strong>し、中央の数字だけに反応してください。";
+      } else {
+        timingNote =
+          "一部の試行で、数字と同時に画面の角へ通知風の表示（日本語）が出ます。音は鳴りません。<strong>通知は無視</strong>し、中央の数字だけに反応してください。";
+      }
+      base.splice(2, 0, timingNote);
+    } else if (state.conditionKey === "AudioDistract") {
+      let timingNote;
+      if (state.timingMode === "Async") {
+        timingNote =
+          "課題中に、数字とは独立したタイミングで短い音（通知・メール風など）が鳴ることがあります。<strong>音は無視</strong>し、中央の数字だけに反応してください。";
+      } else if (state.timingMode === "Steady") {
+        timingNote =
+          "課題中に、環境音がゆっくり大きくなったり小さくなったりすることがあります。<strong>音は無視</strong>し、中央の数字だけに反応してください。";
+      } else {
+        timingNote =
+          "一部の試行では、数字と同時に短い音が鳴ることがあります。<strong>音は無視</strong>し、中央の数字だけに反応してください。";
       }
       base.splice(2, 0, timingNote);
     }
@@ -818,8 +1518,17 @@
     const onset = performance.now(); // 刺激オンセット時刻（RT の基準）
     armResponse();
 
-    const syncShow = state.timingMode === "Sync" && trial.hasTransientDistractor;
-    if (syncShow) showDistractors(trial.distractors);
+    const syncVisual =
+      isVisualDistractCondition(state.conditionKey) &&
+      state.timingMode === "Sync" &&
+      trial.hasTransientDistractor;
+    const syncAudio =
+      isAudioDistractCondition(state.conditionKey) &&
+      state.timingMode === "Sync" &&
+      trial.hasTransientDistractor &&
+      trial.audioClip;
+    if (syncVisual) showDistractors(trial.distractors);
+    if (syncAudio) AudioBank.play(trial.audioClip.id, trial.audioClip.volume);
     el.stim.classList.remove("hidden");
 
     // 数字提示終了 → マスク提示
@@ -849,10 +1558,10 @@
     let shapes = trial.distractorShapes;
     let positions = trial.distractorPositions;
     let sizes = trial.distractorSizes || "";
-    let overlap = syncShow ? CONFIG.stimulusDurationMs : 0;
+    let overlap = syncVisual || syncAudio ? CONFIG.stimulusDurationMs : 0;
     let hasSteady = trial.hasSteadyVisual;
 
-    if (state.conditionKey === "ShapeDistract" && state.timingMode === "Async") {
+    if (isVisualDistractCondition(state.conditionKey) && state.timingMode === "Async") {
       const asyncHit = describeAsyncOverlap(onset, onset + CONFIG.soaMs);
       hasTransient = asyncHit.has;
       shapes = asyncHit.shapes;
@@ -861,7 +1570,7 @@
       overlap = asyncHit.overlap;
     }
 
-    if (state.conditionKey === "ShapeDistract" && state.timingMode === "Steady") {
+    if (isVisualDistractCondition(state.conditionKey) && state.timingMode === "Steady") {
       const steadyHit = describeSteadyOverlap(onset, onset + CONFIG.soaMs);
       hasSteady = steadyHit.has;
       hasTransient = 0;
@@ -869,6 +1578,25 @@
       positions = steadyHit.positions;
       sizes = steadyHit.sizes;
       overlap = steadyHit.overlap;
+    }
+
+    if (isAudioDistractCondition(state.conditionKey) && state.timingMode === "Async") {
+      const audioHit = describeAudioOverlap(onset, onset + CONFIG.soaMs);
+      hasTransient = audioHit.has;
+      shapes = audioHit.shapes;
+      positions = audioHit.positions;
+      sizes = audioHit.sizes;
+      overlap = audioHit.overlap;
+    }
+
+    if (isAudioDistractCondition(state.conditionKey) && state.timingMode === "Steady") {
+      const audioHit = describeAudioOverlap(onset, onset + CONFIG.soaMs);
+      hasSteady = audioHit.has;
+      hasTransient = 0;
+      shapes = audioHit.shapes;
+      positions = audioHit.positions;
+      sizes = audioHit.sizes;
+      overlap = audioHit.overlap;
     }
 
     // 1 行 = 1 試行。列名は VR 版 CSV と揃えやすいスネークケース
@@ -882,8 +1610,9 @@
       modality: trial.modality,
       meaningfulness: trial.meaningfulness,
       temporal: trial.temporal,
-      distractor_timing_mode:
-        state.conditionKey === "ShapeDistract" ? state.timingMode : "None",
+      distractor_timing_mode: usesDistractTiming(state.conditionKey)
+        ? state.timingMode
+        : "None",
       digit: trial.digit,
       font_size: trial.fontSize,
       stimulus_type: trial.stimulusType,
@@ -909,28 +1638,41 @@
    * Steady → playSteadyDistractors（ゆったり出入り）を並行起動
    * blockIndex: 0=練習 / 1=本試行（renderStats は block_index===1 だけ集計）
    */
-  async function runBlock(trials, blockIndex, asyncEvents, steadyEvents) {
+  async function runBlock(trials, blockIndex, asyncEvents, steadyEvents, audioEvents) {
     show("task");
     hideTaskParts();
     state.blockActive = true;
     state.activeAsyncWindows = [];
     state.activeSteadyWindows = [];
+    state.activeAudioWindows = [];
+    AudioBank.stopAll();
 
     const blockStartAbs = performance.now();
 
     const asyncPromise =
-      state.conditionKey === "ShapeDistract" &&
+      isVisualDistractCondition(state.conditionKey) &&
       state.timingMode === "Async" &&
       asyncEvents.length
         ? playAsyncDistractors(asyncEvents, blockStartAbs)
         : Promise.resolve();
 
     const steadyPromise =
-      state.conditionKey === "ShapeDistract" &&
+      isVisualDistractCondition(state.conditionKey) &&
       state.timingMode === "Steady" &&
       steadyEvents &&
       steadyEvents.length
         ? playSteadyDistractors(steadyEvents, blockStartAbs)
+        : Promise.resolve();
+
+    const audioPromise =
+      isAudioDistractCondition(state.conditionKey) &&
+      audioEvents &&
+      audioEvents.length
+        ? state.timingMode === "Async"
+          ? playAsyncAudioEvents(audioEvents, blockStartAbs)
+          : state.timingMode === "Steady"
+            ? playSteadyAudioEvents(audioEvents, blockStartAbs)
+            : Promise.resolve()
         : Promise.resolve();
 
     await waitUntil(blockStartAbs + CONFIG.blockPreambleMs);
@@ -940,9 +1682,11 @@
     }
 
     state.blockActive = false;
-    await Promise.all([asyncPromise, steadyPromise]);
+    await Promise.all([asyncPromise, steadyPromise, audioPromise]);
     clearDistractors();
+    AudioBank.stopAll();
     state.activeSteadyWindows = [];
+    state.activeAudioWindows = [];
   }
 
   // --- 集計・表示（終了画面 #stats / 比較ボックス） ---
@@ -1020,6 +1764,31 @@
     return `${sign}${d} ms`;
   }
 
+  /** 条件＋タイミングの表示ラベル */
+  function formatConditionLabel(r) {
+    if (!r) return "—";
+    let s = r.condition || "—";
+    if (r.timingMode && r.timingMode !== "None") s += ` / ${r.timingMode}`;
+    if (r.demo) s += " · demo";
+    return s;
+  }
+
+  /**
+   * 差分セル用クラス。higherWorse=true なら増加を悪化色（CE/OE向け）。
+   * RT は中立色のまま。
+   */
+  function deltaClass(curr, base, { higherWorse = false } = {}) {
+    if (!Number.isFinite(curr) || !Number.isFinite(base)) return "delta-neutral";
+    const d = curr - base;
+    if (Math.abs(d) < 1e-12) return "delta-neutral";
+    if (!higherWorse) return "delta-neutral";
+    return d > 0 ? "delta-pos" : "delta-neg";
+  }
+
+  function fmtDeltaCell(text, className) {
+    return `<span class="${className}">${text}</span>`;
+  }
+
   // --- localStorage（個人内比較・履歴。サーバなし） ---
   // キー名を変えると既存端末の履歴が見えなくなる（移行なし）
   const STORAGE_KEY = "webcpt_sart_sessions_v1";
@@ -1057,7 +1826,7 @@
       savedAt: new Date().toISOString(),
       dateLocal: localDateString(),
       condition: state.conditionKey,
-      timingMode: state.conditionKey === "ShapeDistract" ? state.timingMode : "None",
+      timingMode: usesDistractTiming(state.conditionKey) ? state.timingMode : "None",
       demo: Boolean(state.demo),
       n: summary.n,
       nogo: summary.nogo,
@@ -1109,70 +1878,194 @@
   }
 
   /**
-   * 終了画面 #self-compare に自分の過去 Baseline との差分を描画。
-   * 参照が見つからない＝同じ participantId の Baseline が未保存。
-   * HTML 骨格は index.html、見た目は styles.css .norm-box。
+   * 終了画面 #self-compare: 過去の多様条件セッションを表で並べ、今回との差分を出す。
+   * 先頭行＝今回。以降は新しい順（デモ除外、最大12件）。
    */
   function renderSelfCompare(current) {
     if (!el.selfCompare) return;
-    const prior = findPriorBaseline(state.participantId, state.sessionId);
-    const priorOtherDay = findPriorBaselineOtherDay(
-      state.participantId,
-      state.sessionId,
-      current.dateLocal
+    const priorBaseline = findPriorBaseline(state.participantId, state.sessionId);
+    const past = sessionsForParticipant(state.participantId, { includeDemo: false }).filter(
+      (r) => r.id !== current.id
     );
+    const shown = past.slice(0, 12);
 
-    if (!prior) {
+    if (!shown.length) {
       el.selfCompare.innerHTML = `
         <p>
-          <strong>自分の Baseline との比較</strong><br />
-          まだこの参加者ID（${state.participantId}）の Baseline が保存されていません。
-          先に Baseline（デモOFF推奨）を1回やると、妨害条件や別日との差分が見られます。
+          まだこの参加者ID（<strong>${state.participantId}</strong>）の過去セッションがありません。
+          Baseline や各妨害条件を繰り返すと、ここに条件横断の表が出ます。
         </p>
-        <p class="note">保存先: このブラウザの localStorage（サーバなし）。</p>
+        <p class="note">保存先: このブラウザの localStorage（サーバなし）。デモは自己比較表から除外します。</p>
       `;
       return;
     }
 
-    const sameDay = prior.dateLocal === current.dateLocal;
-    const vsLabel =
-      current.condition === "Baseline"
-        ? sameDay
-          ? "前回 Baseline（同日）"
-          : "前回 Baseline（別日）"
-        : `保存済み Baseline（${prior.dateLocal}${sameDay ? "・同日" : ""}）`;
+    const currentRow = `
+      <tr class="is-current">
+        <td>今回<br /><span class="note">${current.dateLocal}</span></td>
+        <td>${formatConditionLabel(current)}</td>
+        <td>${fmtPct(current.commissionRate)}<br /><span class="note">${current.commissionCount}/${current.nogo}</span></td>
+        <td>${fmtPct(current.omissionRate)}</td>
+        <td>${fmtMs(current.rtMean)}</td>
+        <td class="delta-neutral">—</td>
+        <td class="delta-neutral">—</td>
+        <td class="delta-neutral">—</td>
+      </tr>`;
 
-    let extra = "";
-    if (current.condition === "Baseline" && priorOtherDay) {
-      extra = `
-        <p>
-          別日 Baseline との差（参照: ${priorOtherDay.dateLocal}）:
-          CE ${fmtDeltaPct(current.commissionRate, priorOtherDay.commissionRate)} /
-          OE ${fmtDeltaPct(current.omissionRate, priorOtherDay.omissionRate)} /
-          RT ${fmtDeltaMs(current.rtMean, priorOtherDay.rtMean)}
-        </p>
-      `;
-    }
+    const pastRows = shown
+      .map((r) => {
+        const dCe = fmtDeltaPct(current.commissionRate, r.commissionRate);
+        const dOe = fmtDeltaPct(current.omissionRate, r.omissionRate);
+        const dRt = fmtDeltaMs(current.rtMean, r.rtMean);
+        const rowClass = r.condition === "Baseline" ? "is-baseline" : "";
+        const time = String(r.savedAt || "").slice(11, 19);
+        return `
+      <tr class="${rowClass}">
+        <td>${r.dateLocal}<br /><span class="note">${time || "—"}</span></td>
+        <td>${formatConditionLabel(r)}</td>
+        <td>${fmtPct(r.commissionRate)}<br /><span class="note">${r.commissionCount}/${r.nogo}</span></td>
+        <td>${fmtPct(r.omissionRate)}</td>
+        <td>${fmtMs(r.rtMean)}</td>
+        <td>${fmtDeltaCell(dCe, deltaClass(current.commissionRate, r.commissionRate, { higherWorse: true }))}</td>
+        <td>${fmtDeltaCell(dOe, deltaClass(current.omissionRate, r.omissionRate, { higherWorse: true }))}</td>
+        <td>${fmtDeltaCell(dRt, "delta-neutral")}</td>
+      </tr>`;
+      })
+      .join("");
+
+    const baselineHint = priorBaseline
+      ? `直近 Baseline: ${priorBaseline.dateLocal} — CE ${fmtPct(priorBaseline.commissionRate)} / OE ${fmtPct(priorBaseline.omissionRate)} / RT ${fmtMs(priorBaseline.rtMean)}（ΔCE ${fmtDeltaPct(current.commissionRate, priorBaseline.commissionRate)}）。`
+      : "まだ Baseline がありません。妨害なしを1回取ると個人内の基準がはっきりします。";
 
     el.selfCompare.innerHTML = `
       <p>
-        <strong>自分の成績比較（個人内）</strong><br />
-        今回: ${current.condition}
-        ${current.timingMode !== "None" ? ` / ${current.timingMode}` : ""}
-        （${current.dateLocal}${current.demo ? "・デモ" : ""}）<br />
-        参照: ${vsLabel} — CE ${fmtPct(prior.commissionRate)} /
-        OE ${fmtPct(prior.omissionRate)} /
-        RT ${fmtMs(prior.rtMean)}
+        参加者 <strong>${state.participantId}</strong> の過去セッション（新しい順・最大12・デモ除外）。
+        差分列は <strong>今回 − 過去</strong>（CE/OE の増加は赤寄り）。
       </p>
-      <p>
-        差分（今回 − 参照）:
-        Commission ${fmtDeltaPct(current.commissionRate, prior.commissionRate)} /
-        Omission ${fmtDeltaPct(current.omissionRate, prior.omissionRate)} /
-        RT平均 ${fmtDeltaMs(current.rtMean, prior.rtMean)}
-      </p>
-      ${extra}
+      <p class="note">${baselineHint}</p>
+      <div class="compare-table-wrap">
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th>日時</th>
+              <th>条件</th>
+              <th>CE</th>
+              <th>OE</th>
+              <th>RT平均</th>
+              <th>ΔCE</th>
+              <th>ΔOE</th>
+              <th>ΔRT</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${currentRow}
+            ${pastRows}
+          </tbody>
+        </table>
+      </div>
       <p class="note">
-        診断ではありません。デモや短いブロックは比較が荒くなります。履歴画面から一覧・削除できます。
+        診断ではありません。条件・タイミング・試行数が違う行は参考比較です。全件は「保存履歴」から。
+      </p>
+    `;
+  }
+
+  /**
+   * 文献（妨害なし健常）との比較表。条件が合わなくても数値は表で見せ、適用可否をバナーで示す。
+   */
+  function renderLitCompare(summary, { isBaseline, timingLabel }) {
+    if (!el.normCompare) return;
+    const manly = NORMS.manly2000;
+    const rob = NORMS.robertson1997;
+    const manlyRate = manly.commissionMean / manly.noGoTrials;
+    const robRate = rob.commissionMean / rob.noGoTrials;
+    const applicable =
+      isBaseline && !state.demo && summary.nogo === manly.noGoTrials;
+
+    let banner;
+    if (applicable) {
+      banner = `<p class="compare-banner is-ok">本比較対象です（Baseline・デモOFF・No-Go ${manly.noGoTrials}）。下表は健常報告との概算です。</p>`;
+    } else if (!isBaseline) {
+      banner = `<p class="compare-banner">参考表示のみ。文献値は<strong>妨害なし（Baseline）</strong>前提です。いまは <strong>${state.conditionKey}</strong>（${timingLabel}）のため本比較対象外です。</p>`;
+    } else if (state.demo || summary.nogo !== manly.noGoTrials) {
+      banner = `<p class="compare-banner">参考表示のみ。文献は No-Go ${manly.noGoTrials} 回前提です。いまは No-Go=${summary.nogo}${state.demo ? "（デモ）" : ""}のため本比較対象外です。</p>`;
+    } else {
+      banner = `<p class="compare-banner">参考表示のみ。</p>`;
+    }
+
+    const z =
+      applicable && manly.commissionSd > 0
+        ? (summary.commissionCount - manly.commissionMean) / manly.commissionSd
+        : NaN;
+    const zText = Number.isFinite(z) ? z.toFixed(2) : "—";
+
+    const dCountManly = applicable
+      ? (() => {
+          const d = summary.commissionCount - manly.commissionMean;
+          const sign = d > 0 ? "+" : "";
+          return `${sign}${d.toFixed(2)} 件`;
+        })()
+      : "—";
+    const dRateManly = applicable
+      ? fmtDeltaPct(summary.commissionRate, manlyRate)
+      : "—";
+    const dRtManly =
+      applicable && Number.isFinite(summary.rtMean)
+        ? (() => {
+            const d = Math.round(summary.rtMean * 1000 - manly.goRtMeanMs);
+            const sign = d > 0 ? "+" : "";
+            return `${sign}${d} ms`;
+          })()
+        : "—";
+
+    const youCeClass = applicable
+      ? deltaClass(summary.commissionCount, manly.commissionMean, { higherWorse: true })
+      : "delta-neutral";
+
+    el.normCompare.innerHTML = `
+      ${banner}
+      <div class="compare-table-wrap">
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th>指標</th>
+              <th>あなた（今回）</th>
+              <th>Manly ら 2000<br /><span class="note">健常 N≈109</span></th>
+              <th>Robertson ら 1997<br /><span class="note">コントロール</span></th>
+              <th>差分（あなた − Manly）</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Commission 件数</td>
+              <td class="${youCeClass}"><strong>${summary.commissionCount}</strong> / ${summary.nogo}</td>
+              <td>${manly.commissionMean} ± ${manly.commissionSd}<br /><span class="note">/ ${manly.noGoTrials}</span></td>
+              <td>${rob.commissionMean} ± ${rob.commissionSd}<br /><span class="note">/ ${rob.noGoTrials}</span></td>
+              <td>${applicable ? fmtDeltaCell(dCountManly, youCeClass) : "—"}</td>
+            </tr>
+            <tr>
+              <td>Commission 率</td>
+              <td>${fmtPct(summary.commissionRate)}</td>
+              <td>${fmtPct(manlyRate)}</td>
+              <td>${fmtPct(robRate)}</td>
+              <td>${applicable ? fmtDeltaCell(dRateManly, deltaClass(summary.commissionRate, manlyRate, { higherWorse: true })) : "—"}</td>
+            </tr>
+            <tr>
+              <td>正答 Go RT 平均</td>
+              <td>${fmtMs(summary.rtMean)}</td>
+              <td>${manly.goRtMeanMs} ms</td>
+              <td>—</td>
+              <td>${dRtManly}</td>
+            </tr>
+            <tr>
+              <td>Manly z（件数）</td>
+              <td colspan="3">${applicable ? describeVsManly(summary.commissionCount) : "条件不一致のため算出しません"}</td>
+              <td><strong>${zText}</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">
+        診断ではありません。年齢帯別規範は使いません。詳細な前提は下の「この比較の前提」を参照。
       </p>
     `;
   }
@@ -1241,30 +2134,32 @@
 
   /**
    * 終了画面の本体（runExperiment の最後）:
-   * 1) block_index===1 を集計 2) localStorage 保存 3) #self-compare 4) #norm-compare
-   * 文献本比較の条件を変えるなら isBaseline / demo / nogo の分岐を触る。
-   * NORMS の数値を変えると比較文・z が変わる（論文値とズレないよう注意）。
+   * 1) 集計 2) localStorage 保存 3) 文献比較表 4) 自己比較表
    */
   function renderStats() {
     const exp = state.logs.filter((r) => r.block_index === 1);
     const s = summarize(exp);
-    const manly = NORMS.manly2000;
-    const rob = NORMS.robertson1997;
-    const manlyRate = manly.commissionMean / manly.noGoTrials;
-    const robRate = rob.commissionMean / rob.noGoTrials;
-    const timingLabel =
-      state.conditionKey === "ShapeDistract" ? state.timingMode : "—";
+    const timingLabel = usesDistractTiming(state.conditionKey)
+      ? state.timingMode
+      : "—";
     const isBaseline = state.conditionKey === "Baseline";
     const record = buildSessionRecord(s);
     upsertSessionRecord(record);
-    renderSelfCompare(record);
+    const distractNoun =
+      state.conditionKey === "IllustDistract"
+        ? "イラスト"
+        : state.conditionKey === "NotifyDistract"
+          ? "通知"
+          : state.conditionKey === "AudioDistract"
+            ? "音声"
+            : "図形";
 
     el.stats.innerHTML = `
       <div><span>条件</span><span>${state.conditionKey}</span></div>
-      <div><span>図形タイミング</span><span>${timingLabel}</span></div>
+      <div><span>妨害タイミング</span><span>${timingLabel}</span></div>
       <div><span>試行数</span><span>${s.n}（No-Go=${s.nogo}）</span></div>
-      <div><span>図形と重なった試行（突発）</span><span>${s.withDistract}</span></div>
-      <div><span>定常図形あり試行</span><span>${s.withSteady}</span></div>
+      <div><span>${distractNoun}と重なった試行（突発）</span><span>${s.withDistract}</span></div>
+      <div><span>定常${distractNoun}あり試行</span><span>${s.withSteady}</span></div>
       <div><span>Commission（3で押した）</span><span>${s.commissionCount} / ${s.nogo}（${fmtPct(s.commissionRate)}）</span></div>
       <div><span>Omission（3以外で押さなかった）</span><span>${s.omissionCount}（${fmtPct(s.omissionRate)}）</span></div>
       <div><span>正答Go RT 平均</span><span>${fmtMs(s.rtMean)}</span></div>
@@ -1273,68 +2168,8 @@
       <div><span>端末へ保存</span><span>localStorage（${state.participantId}）</span></div>
     `;
 
-    if (!el.normCompare) return;
-
-    if (!isBaseline) {
-      el.normCompare.innerHTML = `
-        <p>
-          <strong>文献との数値比較はスキップしました。</strong>
-          参照値は妨害なし（Baseline）の健常報告です。
-          いまの条件は <strong>${state.conditionKey}</strong>（${timingLabel}）のため当てはまりません。
-        </p>
-        <p>
-          参考（妨害なし・健常）: Manly ら Commission 平均 ${manly.commissionMean} / ${manly.noGoTrials}
-          （約 ${fmtPct(manlyRate)}）、Robertson コントロール ${rob.commissionMean} / ${rob.noGoTrials}
-          （約 ${fmtPct(robRate)}）。
-        </p>
-      `;
-      return;
-    }
-
-    if (state.demo || s.nogo !== manly.noGoTrials) {
-      el.normCompare.innerHTML = `
-        <p>
-          <strong>文献との数値比較はスキップしました。</strong>
-          参照研究は No-Go 25 回（妨害なし）前提です。
-          いまの本試行は No-Go=${s.nogo} 回${state.demo ? "（デモ）" : ""}のため、割合の見た目比較は参考程度にしてください。
-        </p>
-        <p>
-          参考（妨害なし・健常）: Manly ら Commission 平均 ${manly.commissionMean} / ${manly.noGoTrials}
-          （約 ${fmtPct(manlyRate)}）、Robertson コントロール ${rob.commissionMean} / ${rob.noGoTrials}
-          （約 ${fmtPct(robRate)}）。
-        </p>
-      `;
-      return;
-    }
-
-    const z =
-      manly.commissionSd > 0
-        ? (s.commissionCount - manly.commissionMean) / manly.commissionSd
-        : NaN;
-    const zText = Number.isFinite(z) ? z.toFixed(2) : "—";
-    const rtVs = Number.isFinite(s.rtMean)
-      ? `あなたの正答 Go RT 平均は ${fmtMs(s.rtMean)}（Manly らの報告平均は約 ${manly.goRtMeanMs} ms）。`
-      : "";
-
-    el.normCompare.innerHTML = `
-      <p>
-        <strong>妨害なし条件での文献比較（年齢帯なし）</strong><br />
-        あなたの Commission は <strong>${s.commissionCount} / ${s.nogo}</strong>
-        （${fmtPct(s.commissionRate)}）。
-        ${describeVsManly(s.commissionCount)}
-        Manly 基準の z ≈ <strong>${zText}</strong>
-        （(件数 − ${manly.commissionMean}) / ${manly.commissionSd}）。
-      </p>
-      <p>
-        副参照: Robertson コントロール平均は ${rob.commissionMean} 件
-        （約 ${fmtPct(robRate)}、SD ${rob.commissionSd}）。
-        ${rtVs}
-      </p>
-      <p>
-        この比較は<strong>診断ではなく</strong>、妨害なし SART の研究報告との概算です。
-        下の「相違点」と論文 URL もあわせて読んでください。
-      </p>
-    `;
+    renderLitCompare(s, { isBaseline, timingLabel });
+    renderSelfCompare(record);
   }
 
   // --- CSV ダウンロード（#btn-download） ---
@@ -1390,10 +2225,9 @@
     const blob = new Blob([toCsv(state.logs)], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    const tag =
-      state.conditionKey === "ShapeDistract"
-        ? `${state.conditionKey}_${state.timingMode}`
-        : state.conditionKey;
+    const tag = usesDistractTiming(state.conditionKey)
+      ? `${state.conditionKey}_${state.timingMode}`
+      : state.conditionKey;
     a.download = `sart_${tag}_${state.participantId}_${state.sessionId}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
@@ -1406,7 +2240,13 @@
     state.running = true;
     state.logs = [];
     state.sessionStart = performance.now();
-    await runBlock(state.practiceTrials, 0, state.practiceAsyncEvents, state.practiceSteadyEvents);
+    await runBlock(
+      state.practiceTrials,
+      0,
+      state.practiceAsyncEvents,
+      state.practiceSteadyEvents,
+      state.practiceAudioEvents
+    );
     state.running = false;
     el.restText.textContent =
       "練習が終わりました。本試行ではフィードバックはありません。準備ができたら始めてください。";
@@ -1418,7 +2258,13 @@
   async function runExperiment() {
     if (state.running) return;
     state.running = true;
-    await runBlock(state.expTrials, 1, state.expAsyncEvents, state.expSteadyEvents);
+    await runBlock(
+      state.expTrials,
+      1,
+      state.expAsyncEvents,
+      state.expSteadyEvents,
+      state.expAudioEvents
+    );
     state.running = false;
     renderStats();
     show("done");
@@ -1436,10 +2282,15 @@
       timingRaw === "Sync" ? "Sync" : timingRaw === "Steady" ? "Steady" : "Async";
     state.demo = demo;
     state.conditionKey = conditionKey;
-    state.timingMode = conditionKey === "ShapeDistract" ? timingMode : "None";
+    state.timingMode = usesDistractTiming(conditionKey) ? timingMode : "None";
     state.participantId = (el.participant.value || "anon").trim().replace(/[^\w\-]+/g, "_");
     // ISO 時刻の : . を - に置換してファイル名安全にする
     state.sessionId = new Date().toISOString().replace(/[:.]/g, "-");
+
+    if (isAudioDistractCondition(conditionKey)) {
+      AudioBank.unlock();
+      AudioBank.preloadAll();
+    }
 
     const expRepeats = demo ? CONFIG.demoRepeatsPerDigit : CONFIG.experimentRepeatsPerDigit;
     const seed = hashSeed(
@@ -1447,6 +2298,7 @@
       state.participantId.length + conditionKey.length + timingMode.length,
       demo ? 1 : 0
     );
+    const kind = distractorKindFor(conditionKey);
 
     state.practiceTrials = buildBlock(
       CONFIG.practiceRepeatsPerDigit,
@@ -1456,42 +2308,71 @@
     );
     state.expTrials = buildBlock(expRepeats, hashSeed(seed, 1, 0), conditionKey, timingMode);
 
-    // Async の図形スケジュールは試行列とは別 seed で生成
-    if (conditionKey === "ShapeDistract" && timingMode === "Async") {
+    // 視覚 Async
+    if (isVisualDistractCondition(conditionKey) && timingMode === "Async") {
       state.practiceAsyncEvents = buildAsyncDistractorEvents(
         state.practiceTrials.length,
-        hashSeed(seed, 2, 0)
+        hashSeed(seed, 2, 0),
+        kind
       );
       state.expAsyncEvents = buildAsyncDistractorEvents(
         state.expTrials.length,
-        hashSeed(seed, 3, 0)
+        hashSeed(seed, 3, 0),
+        kind
       );
     } else {
       state.practiceAsyncEvents = [];
       state.expAsyncEvents = [];
     }
 
-    // Steady: ゆったり出入りのスケジュール（試行列とは別 seed）
-    if (conditionKey === "ShapeDistract" && timingMode === "Steady") {
+    // 視覚 Steady
+    if (isVisualDistractCondition(conditionKey) && timingMode === "Steady") {
       state.practiceSteadyEvents = buildSteadySchedule(
         state.practiceTrials.length,
-        hashSeed(seed, 4, 0)
+        hashSeed(seed, 4, 0),
+        kind
       );
       state.expSteadyEvents = buildSteadySchedule(
         state.expTrials.length,
-        hashSeed(seed, 5, 0)
+        hashSeed(seed, 5, 0),
+        kind
       );
     } else {
       state.practiceSteadyEvents = [];
       state.expSteadyEvents = [];
     }
 
+    // 音声 Async / Steady（Sync は試行ごとに trial.audioClip）
+    if (isAudioDistractCondition(conditionKey) && timingMode === "Async") {
+      state.practiceAudioEvents = buildAsyncAudioEvents(
+        state.practiceTrials.length,
+        hashSeed(seed, 6, 0)
+      );
+      state.expAudioEvents = buildAsyncAudioEvents(
+        state.expTrials.length,
+        hashSeed(seed, 7, 0)
+      );
+    } else if (isAudioDistractCondition(conditionKey) && timingMode === "Steady") {
+      state.practiceAudioEvents = buildSteadyAudioSchedule(
+        state.practiceTrials.length,
+        hashSeed(seed, 8, 0)
+      );
+      state.expAudioEvents = buildSteadyAudioSchedule(
+        state.expTrials.length,
+        hashSeed(seed, 9, 0)
+      );
+    } else {
+      state.practiceAudioEvents = [];
+      state.expAudioEvents = [];
+    }
+
     updateInstruct();
   }
 
   // --- UI イベント配線（ボタン id ↔ index.html） ---
-  el.condition.addEventListener("change", syncShapeOptionsUi);
+  el.condition.addEventListener("change", syncDistractOptionsUi);
   el.start.addEventListener("click", () => {  // 「次へ」→ 教示
+    AudioBank.unlock();
     prepareSession();
     show("instruct");
   });
@@ -1513,14 +2394,17 @@
     show("start");
   });
   el.begin.addEventListener("click", () => {  // 教示の次 → 練習開始
+    AudioBank.unlock();
     runSession();
   });
   el.continue.addEventListener("click", () => {  // 休憩の次 → 本試行
+    AudioBank.unlock();
     runExperiment();
   });
   el.download.addEventListener("click", downloadCsv);  // 試行ログCSV
   el.restart.addEventListener("click", () => {  // 終了→スタート（進行中ブロックも止める）
     state.blockActive = false;
+    AudioBank.stopAll();
     hideTaskParts();
     show("start");
   });
@@ -1529,15 +2413,25 @@
   window.addEventListener("pointerdown", onPointer);  // 画面タップ（ボタン類は除外）
 
   // URL クエリで初期UIを上書き（ブックマーク・デモ配布用）
-  // 例: ?demo=1&condition=ShapeDistract&timing=Steady
+  // 例: ?demo=1&condition=AudioDistract&timing=Async
   if (/[?&]demo=1\b/.test(location.search)) el.demo.checked = true;
   if (/[?&]condition=ShapeDistract\b/i.test(location.search)) {
     el.condition.value = "ShapeDistract";
+  }
+  if (/[?&]condition=IllustDistract\b/i.test(location.search)) {
+    el.condition.value = "IllustDistract";
+  }
+  if (/[?&]condition=AudioDistract\b/i.test(location.search)) {
+    el.condition.value = "AudioDistract";
+  }
+  if (/[?&]condition=NotifyDistract\b/i.test(location.search)) {
+    el.condition.value = "NotifyDistract";
   }
   if (/[?&]timing=Sync\b/i.test(location.search)) el.timing.value = "Sync";
   if (/[?&]timing=Async\b/i.test(location.search)) el.timing.value = "Async";
   if (/[?&]timing=Steady\b/i.test(location.search)) el.timing.value = "Steady";
 
-  syncShapeOptionsUi();
+  AudioBank.preloadAll();
+  syncDistractOptionsUi();
   show("start");  // 最初はスタート画面
 })();
