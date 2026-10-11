@@ -260,16 +260,16 @@ button:disabled {
   position: absolute;
   display: flex;
   align-items: flex-start;
-  gap: 0.55rem;
-  width: min(17.5rem, 88vw);
-  padding: 0.65rem 0.75rem;
-  border-radius: 0.65rem;
-  background: rgba(28, 28, 30, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  gap: 0.9rem;
+  width: min(28rem, 92vw);
+  padding: 1.15rem 1.25rem;
+  border-radius: 0.9rem;
+  background: rgba(28, 28, 30, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
   color: #f2f2f2;
-  font-size: 0.82rem;
-  line-height: 1.35;
+  font-size: 1.15rem;
+  line-height: 1.4;
   pointer-events: none;
   z-index: 1;
 }
@@ -312,25 +312,25 @@ button:disabled {
 
 .notify-toast-icon {
   flex-shrink: 0;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 0.4rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.55rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
+  font-size: 1.55rem;
   background: rgba(255, 255, 255, 0.12);
 }
 
 .notify-toast-title {
   font-weight: 650;
-  font-size: 0.84rem;
-  margin-bottom: 0.15rem;
+  font-size: 1.25rem;
+  margin-bottom: 0.25rem;
 }
 
 .notify-toast-preview {
   color: #b8b8b8;
-  font-size: 0.78rem;
+  font-size: 1.05rem;
 }
 
 .notify-email .notify-toast-icon {
@@ -355,7 +355,7 @@ button:disabled {
 
 /* Steady 通知: 角固定。サイズはトースト固定 */
 .steady-item.steady-notify {
-  width: min(17.5rem, 88vw);
+  width: min(28rem, 92vw);
   height: auto;
   transform: none;
   opacity: 0;

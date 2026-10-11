@@ -27,9 +27,9 @@ After GitHub Pages is enabled: `https://<user>.github.io/<repo>/`
 | | |
 |--|--|
 | Digits | 1–9 (size varies; ignore size) |
-| Go | Press for any digit **except 3** |
-| No-Go | **Do not** press for **3** |
-| Main metric | Commission errors (press on 3) |
+| Go | Press for any digit **except the No-Go digit** |
+| No-Go | **Do not** press for the chosen non-target (default **3**; selectable 1–9) |
+| Main metric | Commission errors (press on the No-Go digit) |
 
 Response: Space / Enter / tap the screen.
 

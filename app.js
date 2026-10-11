@@ -6,7 +6,7 @@
  *
  * 流れ: スタート → 教示 → 練習 → 休憩 → 本試行 → 終了（集計＋CSV）
  * 1試行: 数字 250 ms → マスク 900 ms（SOA 1150 ms）。Space / Enter / クリック / タップ
- * ルール: 1–9、3 だけ押さない（Commission＝3で押した＝主指標）
+ * ルール: 1–9、非ターゲット（既定3・選択可）だけ押さない（Commission＝非ターゲットで押した）
  * ShapeDistract / IllustDistract: Sync（数字と同時）/ Async（突発）/ Steady（ゆったり出入り）
  * AudioDistract: 同上タイミングで音声（素材は assets/audio/。無くても無音で進行）
  * 保存: 試行ログ→CSV／セッション要約→localStorage（個人内比較）
@@ -18,7 +18,7 @@
   // --- CONFIG: 実験パラメータ（文献再現を崩したくない: stimulus/mask/noGo/本試行回数/fontSizes） ---
   const CONFIG = {
     paradigm: "SART", // CSV の paradigm 列。分析側のフィルタ名に使う
-    noGoDigit: 3, // 変えると「押さない数字」が変わる（教示・Commission定義も要確認）
+    noGoDigit: 3, // 既定値。セッション開始時は state.noGoDigit（UI選択）が優先
     digits: [1, 2, 3, 4, 5, 6, 7, 8, 9],
     fontSizes: [1, 2, 3, 4, 5], // → HTML class "digit size-N" → styles.css .digit.size-N
     stimulusDurationMs: 250, // 数字の提示。短くすると難易度↑・文献SOAから外れる
@@ -283,7 +283,7 @@
   // 文字列を変えると既存CSV・分析スクリプトとの互換が切れる
   const Outcome = {
     CorrectGo: "CorrectGo", // Go 試行で正しく押した
-    CorrectNoGo: "CorrectNoGo", // No-Go（数字3）で正しく押さなかった
+    CorrectNoGo: "CorrectNoGo", // No-Go（非ターゲット）で正しく押さなかった
     Omission: "Omission", // Go なのに押さなかった（見逃し）
     Commission: "Commission", // No-Go なのに押した（押し間違い＝SART の主要指標）
   };
@@ -302,6 +302,7 @@
   const el = {
     participant: document.getElementById("participant-id"),
     condition: document.getElementById("condition-select"),
+    nogoDigit: document.getElementById("nogo-digit-select"),
     timing: document.getElementById("timing-select"),
     shapeOptions: document.getElementById("shape-options"),
     demo: document.getElementById("demo-mode"),
@@ -335,6 +336,7 @@
     demo: false,
     conditionKey: "Baseline", // CONDITION_META のキー
     timingMode: "Async", // "Async"|"Sync"|"Steady"|"None"（Baseline時は None）
+    noGoDigit: CONFIG.noGoDigit, // 押さない数字（1–9）。prepareSession で UI から設定
     running: false, // 二重開始防止
     blockActive: false, // false にすると waitUntil / Async再生が途中終了
     practiceTrials: [],
@@ -1184,7 +1186,7 @@
     const temporal = useSteady ? "Steady" : meta.temporal;
 
     return digits.map((digit, trialIndex) => {
-      const stimulusType = digit === CONFIG.noGoDigit ? "NoGo" : "Go";
+      const stimulusType = digit === state.noGoDigit ? "NoGo" : "Go";
       // 5 段階のフォントサイズからランダム（大きさは無視するよう教示）
       const fontSize = CONFIG.fontSizes[Math.floor(rng() * CONFIG.fontSizes.length)];
       const hasDistractor = distractorTrials.has(trialIndex);
@@ -1409,11 +1411,12 @@
    * ShapeDistract / IllustDistract のとき妨害無視の一文を挿入（Async / Sync / Steady で文言が違う）。
    */
   function updateInstruct() {
+    const nogo = state.noGoDigit;
     const base = [
       "画面中央に数字が次々と出ます。大きさは変わります。大きさは無視してください。",
       "数字のあとに、十字の入った円が出ます。円は無視してください。",
-      "<strong>3 以外</strong>の数字が出たら、できるだけ早く押してください。",
-      "<strong>3</strong> が出たら、押さないでください。",
+      `<strong>${nogo} 以外</strong>の数字が出たら、できるだけ早く押してください。`,
+      `<strong>${nogo}</strong> が出たら、押さないでください。`,
       "速さも大切ですが、間違いもできるだけ減らしてください。",
       "練習では、各試行のあと画面に<strong>正解</strong>または<strong>ミス</strong>が表示されます。本試行では出ません。",
     ];
@@ -1613,6 +1616,7 @@
       distractor_timing_mode: usesDistractTiming(state.conditionKey)
         ? state.timingMode
         : "None",
+      no_go_digit: state.noGoDigit,
       digit: trial.digit,
       font_size: trial.fontSize,
       stimulus_type: trial.stimulusType,
@@ -1769,8 +1773,16 @@
     if (!r) return "—";
     let s = r.condition || "—";
     if (r.timingMode && r.timingMode !== "None") s += ` / ${r.timingMode}`;
+    if (r.noGoDigit != null && Number(r.noGoDigit) !== 3) s += ` · NoGo=${r.noGoDigit}`;
     if (r.demo) s += " · demo";
     return s;
+  }
+
+  /** スタート画面から非ターゲット数字（1–9）を読む。不正なら既定 3 */
+  function readNoGoDigitFromUi() {
+    const raw = el.nogoDigit ? Number(el.nogoDigit.value) : CONFIG.noGoDigit;
+    if (Number.isInteger(raw) && raw >= 1 && raw <= 9) return raw;
+    return CONFIG.noGoDigit;
   }
 
   /**
@@ -1827,6 +1839,7 @@
       dateLocal: localDateString(),
       condition: state.conditionKey,
       timingMode: usesDistractTiming(state.conditionKey) ? state.timingMode : "None",
+      noGoDigit: state.noGoDigit,
       demo: Boolean(state.demo),
       n: summary.n,
       nogo: summary.nogo,
@@ -1978,14 +1991,20 @@
     const rob = NORMS.robertson1997;
     const manlyRate = manly.commissionMean / manly.noGoTrials;
     const robRate = rob.commissionMean / rob.noGoTrials;
+    const classicNoGo = state.noGoDigit === 3;
     const applicable =
-      isBaseline && !state.demo && summary.nogo === manly.noGoTrials;
+      isBaseline &&
+      !state.demo &&
+      classicNoGo &&
+      summary.nogo === manly.noGoTrials;
 
     let banner;
     if (applicable) {
-      banner = `<p class="compare-banner is-ok">本比較対象です（Baseline・デモOFF・No-Go ${manly.noGoTrials}）。下表は健常報告との概算です。</p>`;
+      banner = `<p class="compare-banner is-ok">本比較対象です（Baseline・デモOFF・非ターゲット3・No-Go試行 ${manly.noGoTrials}）。下表は健常報告との概算です。</p>`;
     } else if (!isBaseline) {
       banner = `<p class="compare-banner">参考表示のみ。文献値は<strong>妨害なし（Baseline）</strong>前提です。いまは <strong>${state.conditionKey}</strong>（${timingLabel}）のため本比較対象外です。</p>`;
+    } else if (!classicNoGo) {
+      banner = `<p class="compare-banner">参考表示のみ。文献は非ターゲット <strong>3</strong> 前提です。いまは非ターゲット <strong>${state.noGoDigit}</strong> のため本比較対象外です。</p>`;
     } else if (state.demo || summary.nogo !== manly.noGoTrials) {
       banner = `<p class="compare-banner">参考表示のみ。文献は No-Go ${manly.noGoTrials} 回前提です。いまは No-Go=${summary.nogo}${state.demo ? "（デモ）" : ""}のため本比較対象外です。</p>`;
     } else {
@@ -2089,7 +2108,7 @@
         (r) => `
       <tr>
         <td>${r.dateLocal}<br /><span class="note">${String(r.savedAt).slice(11, 19)}</span></td>
-        <td>${r.condition}${r.timingMode && r.timingMode !== "None" ? `<br /><span class="note">${r.timingMode}</span>` : ""}${r.demo ? "<br /><span class=\"note\">demo</span>" : ""}</td>
+        <td>${r.condition}${r.timingMode && r.timingMode !== "None" ? `<br /><span class="note">${r.timingMode}</span>` : ""}${r.noGoDigit != null ? `<br /><span class="note">NoGo=${r.noGoDigit}</span>` : ""}${r.demo ? "<br /><span class=\"note\">demo</span>" : ""}</td>
         <td>${fmtPct(r.commissionRate)}<br /><span class="note">${r.commissionCount}/${r.nogo}</span></td>
         <td>${fmtPct(r.omissionRate)}</td>
         <td>${fmtMs(r.rtMean)}</td>
@@ -2154,14 +2173,16 @@
             ? "音声"
             : "図形";
 
+    const nogo = state.noGoDigit;
     el.stats.innerHTML = `
       <div><span>条件</span><span>${state.conditionKey}</span></div>
+      <div><span>非ターゲット</span><span>${nogo}（押さない数字）</span></div>
       <div><span>妨害タイミング</span><span>${timingLabel}</span></div>
       <div><span>試行数</span><span>${s.n}（No-Go=${s.nogo}）</span></div>
       <div><span>${distractNoun}と重なった試行（突発）</span><span>${s.withDistract}</span></div>
       <div><span>定常${distractNoun}あり試行</span><span>${s.withSteady}</span></div>
-      <div><span>Commission（3で押した）</span><span>${s.commissionCount} / ${s.nogo}（${fmtPct(s.commissionRate)}）</span></div>
-      <div><span>Omission（3以外で押さなかった）</span><span>${s.omissionCount}（${fmtPct(s.omissionRate)}）</span></div>
+      <div><span>Commission（${nogo}で押した）</span><span>${s.commissionCount} / ${s.nogo}（${fmtPct(s.commissionRate)}）</span></div>
+      <div><span>Omission（${nogo}以外で押さなかった）</span><span>${s.omissionCount}（${fmtPct(s.omissionRate)}）</span></div>
       <div><span>正答Go RT 平均</span><span>${fmtMs(s.rtMean)}</span></div>
       <div><span>正答Go RT SD</span><span>${fmtMs(s.rtSd)}</span></div>
       <div><span>正答Go RT CV</span><span>${fmtCv(s.rtCv)}</span></div>
@@ -2196,6 +2217,7 @@
       "meaningfulness",
       "temporal",
       "distractor_timing_mode",
+      "no_go_digit",
       "digit",
       "font_size",
       "stimulus_type",
@@ -2283,6 +2305,7 @@
     state.demo = demo;
     state.conditionKey = conditionKey;
     state.timingMode = usesDistractTiming(conditionKey) ? timingMode : "None";
+    state.noGoDigit = readNoGoDigitFromUi();
     state.participantId = (el.participant.value || "anon").trim().replace(/[^\w\-]+/g, "_");
     // ISO 時刻の : . を - に置換してファイル名安全にする
     state.sessionId = new Date().toISOString().replace(/[:.]/g, "-");
@@ -2295,7 +2318,10 @@
     const expRepeats = demo ? CONFIG.demoRepeatsPerDigit : CONFIG.experimentRepeatsPerDigit;
     const seed = hashSeed(
       1997,
-      state.participantId.length + conditionKey.length + timingMode.length,
+      state.participantId.length +
+        conditionKey.length +
+        timingMode.length +
+        state.noGoDigit * 17,
       demo ? 1 : 0
     );
     const kind = distractorKindFor(conditionKey);
@@ -2430,6 +2456,10 @@
   if (/[?&]timing=Sync\b/i.test(location.search)) el.timing.value = "Sync";
   if (/[?&]timing=Async\b/i.test(location.search)) el.timing.value = "Async";
   if (/[?&]timing=Steady\b/i.test(location.search)) el.timing.value = "Steady";
+  {
+    const m = location.search.match(/[?&]nogo=([1-9])\b/i);
+    if (m && el.nogoDigit) el.nogoDigit.value = m[1];
+  }
 
   AudioBank.preloadAll();
   syncDistractOptionsUi();

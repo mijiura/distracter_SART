@@ -23,11 +23,26 @@
         <h1>SART</h1>
         <p>
           Robertson et al. (1997) の Sustained Attention to Response Task に合わせた課題です。
-          数字 1–9 が出ます。<strong>3 以外は押す / 3 は押さない</strong>。
+          数字 1–9 が出ます。<strong>非ターゲット以外は押す / 非ターゲットは押さない</strong>
+          （既定の非ターゲットは 3。下で変更可）。
         </p>
 
         <label for="participant-id">参加者ID</label>
         <input id="participant-id" type="text" placeholder="P001" autocomplete="off" />
+
+        <label for="nogo-digit-select">非ターゲット（押さない数字）</label>
+        <select id="nogo-digit-select">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3" selected>3（文献と同じ）</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+        </select>
+        <p class="note">文献比較は非ターゲットが 3 のときのみ本比較対象になります。</p>
 
         <label for="condition-select">条件</label>
         <select id="condition-select">
@@ -94,8 +109,8 @@
         <ul id="instruct-list">
           <li>画面中央に数字が次々と出ます。大きさは変わります。大きさは無視してください。</li>
           <li>数字のあとに、十字の入った円が出ます。円は無視してください。</li>
-          <li><strong>3 以外</strong>の数字が出たら、できるだけ早く押してください。</li>
-          <li><strong>3</strong> が出たら、押さないでください。</li>
+          <li><strong>非ターゲット以外</strong>の数字が出たら、できるだけ早く押してください。</li>
+          <li><strong>非ターゲット</strong> が出たら、押さないでください。</li>
           <li>速さも大切ですが、間違いもできるだけ減らしてください。</li>
           <li>練習では、各試行のあと画面に<strong>正解</strong>または<strong>ミス</strong>が表示されます。本試行では出ません。</li>
         </ul>
@@ -128,7 +143,7 @@
         <h1>終了</h1>
         <p>
           本試行の集計です。<strong>診断ではありません。</strong>
-          主要指標は 3 での押し間違い（Commission）です。
+          主要指標は非ターゲットでの押し間違い（Commission）です。
         </p>
         <div id="stats" class="stats"></div>
 
@@ -152,7 +167,10 @@
         <ul class="caveats">
           <li>
             <strong>共通点:</strong> 数字 250 ms＋マスク 900 ms（SOA 1150 ms）、数字 1–9、
-            3 で抑制、5 段階の文字サイズ、本試行 225（各数字 25 回）。
+            非ターゲット（原研究は 3）で抑制、5 段階の文字サイズ、本試行 225（各数字 25 回）。
+          </li>
+          <li>
+            <strong>非ターゲット数字:</strong> 本テストでは 1–9 から選べます。文献比較は 3 のときのみ本比較対象です。
           </li>
           <li>
             <strong>環境:</strong> 原研究は実験室の専用 PC・反応キー。
