@@ -18,7 +18,7 @@
   </head>
   <body>
     <main id="app">
-      <!-- スタート: 参加者ID・条件・デモ。prepareSession() の入力元 -->
+      <!-- スタート: 端末ID（自動）・条件・デモ。prepareSession() の入力元 -->
       <section id="screen-start" class="panel">
         <h1>SART</h1>
         <p>
@@ -27,8 +27,10 @@
           （既定の非ターゲットは 3。下で変更可）。
         </p>
 
-        <label for="participant-id">参加者ID</label>
-        <input id="participant-id" type="text" placeholder="P001" autocomplete="off" />
+        <p class="note">
+          端末ID（自動割当・このブラウザに保存）:
+          <strong id="device-id-display">—</strong>
+        </p>
 
         <label for="nogo-digit-select">非ターゲット（押さない数字）</label>
         <select id="nogo-digit-select">
@@ -90,15 +92,14 @@
       <section id="screen-history" class="panel hidden">
         <h1>保存履歴（このブラウザ）</h1>
         <p class="note">
-          参加者IDで絞り込みます。別PC・別ブラウザでは見えません。
+          この端末ID（<strong id="history-device-id-display">—</strong>）のセッションのみ表示します。
+          別PC・別ブラウザでは見えません。
           <strong>この端末のブラウザデータを消すと消えます</strong>。
         </p>
-        <label for="history-participant">参加者ID</label>
-        <input id="history-participant" type="text" placeholder="P001" autocomplete="off" />
         <div id="history-list" class="history-list"></div>
         <div class="row">
           <button id="btn-history-refresh" type="button">表示を更新</button>
-          <button id="btn-history-clear" class="secondary" type="button">このIDの履歴を消す</button>
+          <button id="btn-history-clear" class="secondary" type="button">この端末の履歴を消す</button>
           <button id="btn-history-back" class="secondary" type="button">戻る</button>
         </div>
       </section>

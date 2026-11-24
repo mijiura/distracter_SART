@@ -300,7 +300,8 @@
 
   // --- 操作対象（id は index.html と1対1）。null になるとクリックや刺激表示が壊れる ---
   const el = {
-    participant: document.getElementById("participant-id"),
+    deviceIdDisplay: document.getElementById("device-id-display"),
+    historyDeviceIdDisplay: document.getElementById("history-device-id-display"),
     condition: document.getElementById("condition-select"),
     nogoDigit: document.getElementById("nogo-digit-select"),
     timing: document.getElementById("timing-select"),
@@ -309,7 +310,6 @@
     instructList: document.getElementById("instruct-list"),
     start: document.getElementById("btn-start"),
     historyBtn: document.getElementById("btn-history"),
-    historyParticipant: document.getElementById("history-participant"),
     historyList: document.getElementById("history-list"),
     historyRefresh: document.getElementById("btn-history-refresh"),
     historyClear: document.getElementById("btn-history-clear"),
@@ -328,9 +328,42 @@
     normCompare: document.getElementById("norm-compare"),
   };
 
+  // --- 端末ID（参加者IDの代わり）。U + 6桁。localStorage に永続化し、手動入力はしない ---
+  const DEVICE_ID_KEY = "webcpt_sart_device_id_v1";
+
+  /** 既存の U###### があれば使い、なければ新規採番して保存 */
+  function getOrCreateDeviceId() {
+    try {
+      const existing = localStorage.getItem(DEVICE_ID_KEY);
+      if (existing && /^U\d{6}$/.test(existing)) return existing;
+    } catch (_err) {
+      /* private mode 等 */
+    }
+    let n;
+    try {
+      const buf = new Uint32Array(1);
+      crypto.getRandomValues(buf);
+      n = buf[0] % 1e6;
+    } catch (_err) {
+      n = Math.floor(Math.random() * 1e6);
+    }
+    const id = `U${String(n).padStart(6, "0")}`;
+    try {
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    } catch (_err) {
+      /* 保存不可でもセッション中は id を使う */
+    }
+    return id;
+  }
+
+  function syncDeviceIdDisplays(id) {
+    if (el.deviceIdDisplay) el.deviceIdDisplay.textContent = id;
+    if (el.historyDeviceIdDisplay) el.historyDeviceIdDisplay.textContent = id;
+  }
+
   // --- 1セッション分の状態。prepareSession / runBlock / renderStats が読み書き ---
   const state = {
-    participantId: "anon",
+    participantId: "U000000", // getOrCreateDeviceId() で上書き（CSV / localStorage の participant_id）
     sessionId: "",
     sessionStart: 0, // performance.now()。CSV の stim_onset_ms の基準
     demo: false,
@@ -2094,10 +2127,8 @@
    * includeDemo:true なのでデモも一覧に出る（自己比較の既定はデモ除外）。
    */
   function renderHistoryList() {
-    const pid = (el.historyParticipant.value || el.participant.value || "anon")
-      .trim()
-      .replace(/[^\w\-]+/g, "_") || "anon";
-    el.historyParticipant.value = pid;
+    const pid = state.participantId || getOrCreateDeviceId();
+    syncDeviceIdDisplays(pid);
     const rows = sessionsForParticipant(pid, { includeDemo: true });
     if (!rows.length) {
       el.historyList.innerHTML = `<p>${pid} の保存セッションはありません。</p>`;
@@ -2306,7 +2337,8 @@
     state.conditionKey = conditionKey;
     state.timingMode = usesDistractTiming(conditionKey) ? timingMode : "None";
     state.noGoDigit = readNoGoDigitFromUi();
-    state.participantId = (el.participant.value || "anon").trim().replace(/[^\w\-]+/g, "_");
+    state.participantId = getOrCreateDeviceId();
+    syncDeviceIdDisplays(state.participantId);
     // ISO 時刻の : . を - に置換してファイル名安全にする
     state.sessionId = new Date().toISOString().replace(/[:.]/g, "-");
 
@@ -2403,15 +2435,13 @@
     show("instruct");
   });
   el.historyBtn.addEventListener("click", () => {  // 保存一覧
-    el.historyParticipant.value =
-      (el.participant.value || "anon").trim().replace(/[^\w\-]+/g, "_") || "anon";
+    state.participantId = getOrCreateDeviceId();
     renderHistoryList();
     show("history");
   });
   el.historyRefresh.addEventListener("click", renderHistoryList);
   el.historyClear.addEventListener("click", () => {
-    const pid =
-      (el.historyParticipant.value || "anon").trim().replace(/[^\w\-]+/g, "_") || "anon";
+    const pid = state.participantId || getOrCreateDeviceId();
     if (!window.confirm(`${pid} の保存履歴をこのブラウザから削除しますか？`)) return;
     saveAllSessions(loadAllSessions().filter((r) => r.participantId !== pid));
     renderHistoryList();
@@ -2463,5 +2493,7 @@
 
   AudioBank.preloadAll();
   syncDistractOptionsUi();
+  state.participantId = getOrCreateDeviceId();
+  syncDeviceIdDisplays(state.participantId);
   show("start");  // 最初はスタート画面
 })();

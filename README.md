@@ -46,8 +46,10 @@ Demo mode shortens the experimental block.
 
 ## Data (stays on the user’s device)
 
-1. **CSV** — optional download of trial-level log  
+1. **CSV** — optional download of trial-level log (`participant_id` = auto device ID)  
 2. **localStorage** — session summaries for history / personal Baseline compare (`webcpt_sart_sessions_v1`)
+
+Participant / device ID is assigned automatically as `U######` (persisted in `webcpt_sart_device_id_v1`). There is no manual ID field.
 
 Nothing is uploaded to GitHub or any server.
 
